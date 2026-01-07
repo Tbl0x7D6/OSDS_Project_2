@@ -1,0 +1,52 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories (remove the leading / if you want to ignore them in all directories)
+vendor/
+
+# IDE/editor specific files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+*.old
+*.swp
+*.swo
+
+# Go build cache
+go.sum
+
+# Ignore demo artifacts
+demo.sh~
+*.bak
+*.tmp
+*.old
+*.swp
+*.swo
+
+# Ignore test coverage files
+*.coverprofile
+*.cov
+*.coverage
+
+# Ignore binaries
+bin/
