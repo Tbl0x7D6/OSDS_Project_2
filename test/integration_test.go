@@ -136,7 +136,7 @@ func TestIntegration_CorruptedBlockRejection(t *testing.T) {
 
 	// Mine it properly first
 	powInstance := pow.NewProofOfWork(validBlock)
-	result := powInstance.Mine(context.Background())
+	result := powInstance.Mine(context.Background(), nil)
 
 	// Corrupt the block by tampering with the hash directly
 	// This simulates block data corruption
@@ -252,7 +252,7 @@ func TestIntegration_ChainValidationDetectsCorruption(t *testing.T) {
 
 		// Mine
 		powInstance := pow.NewProofOfWork(newBlock)
-		result := powInstance.Mine(context.Background())
+		result := powInstance.Mine(context.Background(), nil)
 		if !result.Success {
 			t.Fatal("Mining should succeed")
 		}
@@ -413,7 +413,7 @@ func BenchmarkMining(b *testing.B) {
 
 		testBlock := block.NewBlock(1, txs, "0000", 2, "miner")
 		powInstance := pow.NewProofOfWork(testBlock)
-		powInstance.Mine(context.Background())
+		powInstance.Mine(context.Background(), nil)
 	}
 }
 

@@ -70,18 +70,17 @@ func printUsage() {
 }
 
 func submitTransaction(minerAddr, from, to string, amount int64) {
-	client := network.NewClient(from, []network.PeerInfo{
+	_ = network.NewClient("client", []network.PeerInfo{
 		{ID: "miner", Address: minerAddr},
 	})
 
-	txID, err := client.SubmitTransaction(to, amount)
-	if err != nil {
-		fmt.Printf("Error submitting transaction: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("Transaction submitted successfully!\n")
-	fmt.Printf("Transaction ID: %s\n", txID)
+	fmt.Println("Note: This client requires UTXO inputs. Please use the miner's RPC API directly for transaction submission.")
+	fmt.Printf("From: %s, To: %s, Amount: %d\n", from, to, amount)
+	fmt.Println("To submit a transaction, you need to:")
+	fmt.Println("1. Query available UTXOs for the sender address")
+	fmt.Println("2. Create input specifications")
+	fmt.Println("3. Provide private keys for signing")
+	fmt.Println("Please refer to the network package documentation for UTXO-based transaction submission.")
 }
 
 func getMinerStatus(minerAddr string) {

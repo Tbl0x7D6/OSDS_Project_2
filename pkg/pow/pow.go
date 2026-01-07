@@ -35,39 +35,8 @@ func GetTarget(difficulty int) string {
 }
 
 // Mine performs the mining operation to find a valid nonce
-// It returns when a valid nonce is found or the context is cancelled
-func (pow *ProofOfWork) Mine(ctx context.Context) *MiningResult {
-	var nonce int64 = 0
-	target := GetTarget(pow.Difficulty)
-
-	for {
-		select {
-		case <-ctx.Done():
-			// Mining was cancelled
-			return &MiningResult{
-				Block:   pow.Block,
-				Success: false,
-				Nonce:   nonce,
-			}
-		default:
-			pow.Block.Nonce = nonce
-			hash := pow.Block.CalculateHash()
-
-			if strings.HasPrefix(hash, target) {
-				pow.Block.Hash = hash
-				return &MiningResult{
-					Block:   pow.Block,
-					Success: true,
-					Nonce:   nonce,
-				}
-			}
-			nonce++
-		}
-	}
-}
-
-// MineWithCallback performs mining with periodic callback for progress reporting
-func (pow *ProofOfWork) MineWithCallback(ctx context.Context, callback func(nonce int64)) *MiningResult {
+// Optional callback for progress reporting (can be nil)
+func (pow *ProofOfWork) Mine(ctx context.Context, callback func(nonce int64)) *MiningResult {
 	var nonce int64 = 0
 	target := GetTarget(pow.Difficulty)
 	reportInterval := int64(100000) // Report every 100k attempts

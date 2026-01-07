@@ -9,19 +9,28 @@ import (
 	"time"
 )
 
-func createTestBlock(difficulty int) *block.Block {
+// Helper function to create a ProofOfWork instance for testing
+func setupTestPoW(difficulty int) (*ProofOfWork, *block.Block) {
 	tx := transaction.NewCoinbaseTransaction("miner1", 50, 1)
 	txs := []*transaction.Transaction{tx}
+	testBlock := block.NewBlock(1, txs, "0000000000000000000000000000000000000000000000000000000000000000", difficulty, "miner1")
+	return NewProofOfWork(testBlock), testBlock
+}
 
-	return block.NewBlock(1, txs, "0000000000000000000000000000000000000000000000000000000000000000", difficulty, "miner1")
+// Helper function to create a cancellable context with a delay
+func createCancellableContext(delay time.Duration) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(delay)
+		cancel()
+	}()
+	return ctx, cancel
 }
 
 func TestMine(t *testing.T) {
-	// Use low difficulty for fast test
-	testBlock := createTestBlock(2)
-	pow := NewProofOfWork(testBlock)
+	pow, _ := setupTestPoW(2)
 
-	result := pow.Mine(context.Background())
+	result := pow.Mine(context.Background(), nil)
 
 	if !result.Success {
 		t.Error("Mining should succeed")
@@ -37,19 +46,10 @@ func TestMine(t *testing.T) {
 }
 
 func TestMineWithCancellation(t *testing.T) {
-	// Use high difficulty to ensure mining doesn't complete quickly
-	testBlock := createTestBlock(8)
-	pow := NewProofOfWork(testBlock)
+	pow, _ := setupTestPoW(8)
+	ctx, _ := createCancellableContext(100 * time.Millisecond)
 
-	ctx, cancel := context.WithCancel(context.Background())
-
-	// Cancel after short delay
-	go func() {
-		time.Sleep(100 * time.Millisecond)
-		cancel()
-	}()
-
-	result := pow.Mine(ctx)
+	result := pow.Mine(ctx, nil)
 
 	if result.Success {
 		t.Error("Mining should be cancelled, not succeed")
@@ -57,28 +57,22 @@ func TestMineWithCancellation(t *testing.T) {
 }
 
 func TestMineWithCallback(t *testing.T) {
-	testBlock := createTestBlock(2)
-	pow := NewProofOfWork(testBlock)
+	pow, _ := setupTestPoW(2)
 
 	callbackCount := 0
 	callback := func(nonce int64) {
 		callbackCount++
 	}
 
-	result := pow.MineWithCallback(context.Background(), callback)
+	result := pow.Mine(context.Background(), callback)
 
 	if !result.Success {
 		t.Error("Mining should succeed")
 	}
-
-	// Callback might not be called if mining is very fast
-	// Just check that mining completes without error
-	_ = callbackCount
 }
 
 func TestMineParallel(t *testing.T) {
-	testBlock := createTestBlock(2)
-	pow := NewProofOfWork(testBlock)
+	pow, _ := setupTestPoW(2)
 
 	result := pow.MineParallel(context.Background(), 4)
 
@@ -92,15 +86,8 @@ func TestMineParallel(t *testing.T) {
 }
 
 func TestMineParallelWithCancellation(t *testing.T) {
-	testBlock := createTestBlock(8)
-	pow := NewProofOfWork(testBlock)
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	go func() {
-		time.Sleep(100 * time.Millisecond)
-		cancel()
-	}()
+	pow, _ := setupTestPoW(8)
+	ctx, _ := createCancellableContext(100 * time.Millisecond)
 
 	result := pow.MineParallel(ctx, 4)
 
@@ -110,10 +97,8 @@ func TestMineParallelWithCancellation(t *testing.T) {
 }
 
 func TestValidate(t *testing.T) {
-	testBlock := createTestBlock(2)
-	pow := NewProofOfWork(testBlock)
-
-	result := pow.Mine(context.Background())
+	pow, _ := setupTestPoW(2)
+	result := pow.Mine(context.Background(), nil)
 	if !result.Success {
 		t.Fatal("Mining should succeed")
 	}
@@ -162,10 +147,9 @@ func TestDifficultyAffectsMiningSpeed(t *testing.T) {
 	// Using difficulty 1 and 2 for reasonable test time
 
 	// Difficulty 1
-	block1 := createTestBlock(1)
-	pow1 := NewProofOfWork(block1)
+	pow1, _ := setupTestPoW(1)
 	start1 := time.Now()
-	result1 := pow1.Mine(context.Background())
+	result1 := pow1.Mine(context.Background(), nil)
 	time1 := time.Since(start1)
 
 	if !result1.Success {
@@ -173,10 +157,9 @@ func TestDifficultyAffectsMiningSpeed(t *testing.T) {
 	}
 
 	// Difficulty 2
-	block2 := createTestBlock(2)
-	pow2 := NewProofOfWork(block2)
+	pow2, _ := setupTestPoW(2)
 	start2 := time.Now()
-	result2 := pow2.Mine(context.Background())
+	result2 := pow2.Mine(context.Background(), nil)
 	time2 := time.Since(start2)
 
 	if !result2.Success {
@@ -191,16 +174,14 @@ func TestDifficultyAffectsMiningSpeed(t *testing.T) {
 
 func BenchmarkMine(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		testBlock := createTestBlock(2)
-		pow := NewProofOfWork(testBlock)
-		pow.Mine(context.Background())
+		pow, _ := setupTestPoW(2)
+		pow.Mine(context.Background(), nil)
 	}
 }
 
 func BenchmarkMineParallel(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		testBlock := createTestBlock(2)
-		pow := NewProofOfWork(testBlock)
+		pow, _ := setupTestPoW(2)
 		pow.MineParallel(context.Background(), 4)
 	}
 }

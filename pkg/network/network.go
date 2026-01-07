@@ -572,7 +572,7 @@ func (m *Miner) mineBlock() {
 
 	go func() {
 		// Replace nil with context.TODO() to avoid passing a nil context
-		result = powInstance.MineWithCallback(context.TODO(), func(nonce int64) {
+		result = powInstance.Mine(context.TODO(), func(nonce int64) {
 			select {
 			case <-stopChan:
 				return
