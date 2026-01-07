@@ -13,6 +13,14 @@ import (
 	"syscall"
 )
 
+// shortID returns the first 6 characters of an ID for logging
+func shortID(id string) string {
+	if len(id) <= 6 {
+		return id
+	}
+	return id[:6]
+}
+
 func main() {
 	// Parse command line arguments
 	id := flag.String("id", "", "Miner ID")
@@ -52,7 +60,7 @@ func main() {
 
 	// Set up logging callback
 	miner.SetBlockCallback(func(b *block.Block) {
-		log.Printf("[%s] New block added: #%d", *id, b.Index)
+		log.Printf("[%s] New block added: #%d", shortID(*id), b.Index)
 	})
 
 	// Start the miner server
@@ -63,7 +71,7 @@ func main() {
 
 	// Sync with peers
 	if len(peerList) > 0 {
-		log.Printf("[%s] Syncing with %d peers...", *id, len(peerList))
+		log.Printf("[%s] Syncing with %d peers...", shortID(*id), len(peerList))
 		miner.SyncWithAllPeers()
 	}
 
@@ -72,13 +80,13 @@ func main() {
 		miner.StartMining()
 	}
 
-	log.Printf("[%s] Miner is running. Chain length: %d", *id, miner.Blockchain.GetLength())
+	log.Printf("[%s] Miner is running. Chain length: %d", shortID(*id), miner.Blockchain.GetLength())
 
 	// Wait for interrupt signal
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	<-sigChan
 
-	log.Printf("[%s] Shutting down...", *id)
+	log.Printf("[%s] Shutting down...", shortID(*id))
 	miner.Stop()
 }

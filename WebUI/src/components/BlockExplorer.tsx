@@ -16,6 +16,12 @@ import { FiPackage, FiRefreshCw, FiClock, FiHash } from 'react-icons/fi';
 import { useBlockchainStatus } from '../hooks/useBlockchain';
 import type { BlockOutput, TransactionOutput } from '../types/blockchain';
 
+// Helper function to get short ID (first 6 characters)
+const shortID = (id: string): string => {
+  if (!id) return '';
+  return id.length <= 6 ? id : id.substring(0, 6);
+};
+
 export function BlockExplorer() {
   const { status, loading, error, refresh } = useBlockchainStatus(
     'localhost:8001',
@@ -149,7 +155,7 @@ function BlockCard({ block, expanded, onToggle }: BlockCardProps) {
 
           <Flex justify="space-between">
             <Text color="fg.muted">矿工:</Text>
-            <Badge>{block.miner_id}</Badge>
+            <Badge>{shortID(block.miner_id)}</Badge>
           </Flex>
 
           <Flex justify="space-between">

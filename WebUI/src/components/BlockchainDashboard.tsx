@@ -4,6 +4,12 @@ import { Box, Flex, HStack, VStack, Text, Badge, Card, Stat, Spinner, Button } f
 import { FiRefreshCw, FiDatabase, FiCpu, FiActivity, FiHash } from 'react-icons/fi';
 import { useBlockchainStatus } from '../hooks/useBlockchain';
 
+// Helper function to get short ID (first 6 characters)
+const shortID = (id: string): string => {
+  if (!id) return '';
+  return id.length <= 6 ? id : id.substring(0, 6);
+};
+
 export function BlockchainDashboard() {
   const { status, loading, error, refresh } = useBlockchainStatus(
     'localhost:8001',
@@ -148,7 +154,7 @@ export function BlockchainDashboard() {
             </Flex>
             <Flex justify="space-between">
               <Text color="fg.muted">矿工:</Text>
-              <Badge colorPalette="blue">{status.latest_block_miner}</Badge>
+              <Badge colorPalette="blue">{shortID(status.latest_block_miner)}</Badge>
             </Flex>
             <Flex justify="space-between">
               <Text color="fg.muted">时间:</Text>
@@ -174,7 +180,7 @@ export function BlockchainDashboard() {
             >
               <Flex justify="space-between">
                 <Text color="fg.muted">节点ID:</Text>
-                <Badge>{status.miner_status.ID}</Badge>
+                <Badge>{shortID(status.miner_status.ID)}</Badge>
               </Flex>
               <Flex justify="space-between">
                 <Text color="fg.muted">待处理交易:</Text>

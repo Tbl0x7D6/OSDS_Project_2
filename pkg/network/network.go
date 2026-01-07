@@ -17,6 +17,14 @@ import (
 	"time"
 )
 
+// shortID returns the first 6 characters of an ID for logging
+func shortID(id string) string {
+	if len(id) <= 6 {
+		return id
+	}
+	return id[:6]
+}
+
 // MessageType represents the type of network message
 type MessageType int
 
@@ -162,7 +170,7 @@ func (m *Miner) Start() error {
 		}
 	}()
 
-	log.Printf("[%s] Miner started on %s", m.ID, m.Address)
+	log.Printf("[%s] Miner started on %s", shortID(m.ID), m.Address)
 	return nil
 }
 
@@ -176,7 +184,7 @@ func (m *Miner) Stop() {
 	if m.listener != nil {
 		m.listener.Close()
 	}
-	log.Printf("[%s] Miner stopped", m.ID)
+	log.Printf("[%s] Miner stopped", shortID(m.ID))
 }
 
 // IsStopped returns true if the miner has been stopped
@@ -226,7 +234,7 @@ func (s *RPCService) SubmitTransaction(args *TransactionArgs, reply *Transaction
 	// Broadcast transaction to peers
 	go s.miner.BroadcastTransaction(tx)
 
-	log.Printf("[%s] Received transaction: %s", s.miner.ID, tx.String())
+	log.Printf("[%s] Received transaction: %s", shortID(s.miner.ID), tx.String())
 	return nil
 }
 
@@ -275,7 +283,7 @@ func (s *RPCService) ReceiveTransaction(args *BlockArgs, reply *TransactionReply
 	reply.Success = true
 	reply.TxID = tx.ID
 
-	log.Printf("[%s] Received transaction from peer: %s", s.miner.ID, tx.String())
+	log.Printf("[%s] Received transaction from peer: %s", shortID(s.miner.ID), tx.String())
 	return nil
 }
 
@@ -292,21 +300,21 @@ func (s *RPCService) ReceiveBlock(args *BlockArgs, reply *BlockReply) error {
 	if !newBlock.HasValidHash() {
 		reply.Success = false
 		reply.Error = "invalid block hash"
-		log.Printf("[%s] Rejected block with invalid hash from miner %s", s.miner.ID, newBlock.MinerID)
+		log.Printf("[%s] Rejected block with invalid hash from miner %s", shortID(s.miner.ID), shortID(newBlock.MinerID))
 		return nil
 	}
 
 	if !newBlock.HasValidPoW() {
 		reply.Success = false
 		reply.Error = "invalid proof of work"
-		log.Printf("[%s] Rejected block with invalid PoW from miner %s", s.miner.ID, newBlock.MinerID)
+		log.Printf("[%s] Rejected block with invalid PoW from miner %s", shortID(s.miner.ID), shortID(newBlock.MinerID))
 		return nil
 	}
 
 	if !pow.Validate(newBlock) {
 		reply.Success = false
 		reply.Error = "PoW validation failed"
-		log.Printf("[%s] Rejected block - PoW validation failed from miner %s", s.miner.ID, newBlock.MinerID)
+		log.Printf("[%s] Rejected block - PoW validation failed from miner %s", shortID(s.miner.ID), shortID(newBlock.MinerID))
 		return nil
 	}
 
@@ -326,7 +334,7 @@ func (s *RPCService) ReceiveBlock(args *BlockArgs, reply *BlockReply) error {
 		return nil
 	}
 
-	log.Printf("[%s] Accepted block #%d from miner %s", s.miner.ID, newBlock.Index, newBlock.MinerID)
+	log.Printf("[%s] Accepted block #%d from miner %s", shortID(s.miner.ID), newBlock.Index, shortID(newBlock.MinerID))
 
 	// Remove transactions that are now in the block
 	s.miner.RemoveTransactions(newBlock.Transactions)
@@ -420,7 +428,7 @@ func (m *Miner) GetPendingTransactions() []*transaction.Transaction {
 func (m *Miner) BroadcastTransaction(tx *transaction.Transaction) {
 	data, err := tx.Serialize()
 	if err != nil {
-		log.Printf("[%s] Failed to serialize transaction: %v", m.ID, err)
+		log.Printf("[%s] Failed to serialize transaction: %v", shortID(m.ID), err)
 		return
 	}
 
@@ -475,13 +483,13 @@ func (m *Miner) BroadcastBlock(b *block.Block) {
 
 	// Validate all transactions before broadcasting
 	if !b.ValidateTransactions() {
-		log.Printf("[%s] Block has invalid transactions, not broadcasting", m.ID)
+		log.Printf("[%s] Block has invalid transactions, not broadcasting", shortID(m.ID))
 		return
 	}
 
 	data, err := b.Serialize()
 	if err != nil {
-		log.Printf("[%s] Failed to serialize block: %v", m.ID, err)
+		log.Printf("[%s] Failed to serialize block: %v", shortID(m.ID), err)
 		return
 	}
 
@@ -518,7 +526,7 @@ func (m *Miner) StartMining() {
 	m.miningMutex.Unlock()
 
 	go m.miningLoop()
-	log.Printf("[%s] Mining started", m.ID)
+	log.Printf("[%s] Mining started", shortID(m.ID))
 }
 
 // StopMining stops the mining process
@@ -531,7 +539,7 @@ func (m *Miner) StopMining() {
 	m.miningEnabled = false
 	close(m.stopMining)
 	m.miningMutex.Unlock()
-	log.Printf("[%s] Mining stopped", m.ID)
+	log.Printf("[%s] Mining stopped", shortID(m.ID))
 }
 
 // miningLoop is the main mining loop
@@ -633,7 +641,7 @@ func (m *Miner) mineBlock() {
 	}
 
 	log.Printf("[%s] Mined block #%d with %d transactions, nonce: %d",
-		m.ID, result.Block.Index, len(result.Block.Transactions), result.Nonce)
+		shortID(m.ID), result.Block.Index, len(result.Block.Transactions), result.Nonce)
 
 	// Remove included transactions from pending pool
 	m.RemoveTransactions(txs)
@@ -682,7 +690,7 @@ func (m *Miner) SyncWithPeer(peer PeerInfo) error {
 		return fmt.Errorf("failed to replace chain: %v", err)
 	}
 
-	log.Printf("[%s] Synchronized chain with peer %s, new length: %d", m.ID, peer.ID, len(blocks))
+	log.Printf("[%s] Synchronized chain with peer %s, new length: %d", shortID(m.ID), shortID(peer.ID), len(blocks))
 	return nil
 }
 
@@ -708,7 +716,7 @@ func (m *Miner) SetBlockCallback(callback func(*block.Block)) {
 // SetDifficulty updates the mining difficulty
 func (m *Miner) SetDifficulty(difficulty int) {
 	m.Blockchain.SetDifficulty(difficulty)
-	log.Printf("[%s] Difficulty set to %d", m.ID, difficulty)
+	log.Printf("[%s] Difficulty set to %d", shortID(m.ID), difficulty)
 }
 
 // Client represents a blockchain client (wallet)
