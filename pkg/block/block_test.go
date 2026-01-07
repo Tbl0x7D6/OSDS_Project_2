@@ -6,9 +6,8 @@ import (
 )
 
 func TestNewBlock(t *testing.T) {
-	tx := transaction.NewTransaction("alice", "bob", 10.0)
-	tx.Sign("key")
-	txs := []*transaction.Transaction{tx}
+	coinbase := transaction.NewCoinbaseTransaction("miner1", 5000000000, 1)
+	txs := []*transaction.Transaction{coinbase}
 
 	block := NewBlock(1, txs, "prev_hash", 2, "miner1")
 
@@ -44,9 +43,8 @@ func TestGenesisBlock(t *testing.T) {
 }
 
 func TestBlockHashConsistency(t *testing.T) {
-	tx := transaction.NewTransaction("alice", "bob", 10.0)
-	tx.Sign("key")
-	txs := []*transaction.Transaction{tx}
+	coinbase := transaction.NewCoinbaseTransaction("miner1", 5000000000, 1)
+	txs := []*transaction.Transaction{coinbase}
 
 	block := NewBlock(1, txs, "prev_hash", 2, "miner1")
 	block.Nonce = 12345
@@ -61,9 +59,8 @@ func TestBlockHashConsistency(t *testing.T) {
 }
 
 func TestHasValidHash(t *testing.T) {
-	tx := transaction.NewTransaction("alice", "bob", 10.0)
-	tx.Sign("key")
-	txs := []*transaction.Transaction{tx}
+	coinbase := transaction.NewCoinbaseTransaction("miner1", 5000000000, 1)
+	txs := []*transaction.Transaction{coinbase}
 
 	block := NewBlock(1, txs, "prev_hash", 2, "miner1")
 	block.Nonce = 12345
@@ -81,9 +78,8 @@ func TestHasValidHash(t *testing.T) {
 }
 
 func TestHasValidPoW(t *testing.T) {
-	tx := transaction.NewTransaction("alice", "bob", 10.0)
-	tx.Sign("key")
-	txs := []*transaction.Transaction{tx}
+	coinbase := transaction.NewCoinbaseTransaction("miner1", 5000000000, 1)
+	txs := []*transaction.Transaction{coinbase}
 
 	block := NewBlock(1, txs, "prev_hash", 2, "miner1")
 
@@ -108,28 +104,30 @@ func TestHasValidPoW(t *testing.T) {
 }
 
 func TestValidateTransactions(t *testing.T) {
-	// Valid transactions
-	tx1 := transaction.NewTransaction("alice", "bob", 10.0)
-	tx1.Sign("key")
-	txs := []*transaction.Transaction{tx1}
+	// Valid coinbase transaction
+	coinbase := transaction.NewCoinbaseTransaction("miner1", 5000000000, 1)
+	txs := []*transaction.Transaction{coinbase}
 
 	block := NewBlock(1, txs, "prev_hash", 2, "miner1")
 	if !block.ValidateTransactions() {
-		t.Error("Block with valid transactions should pass validation")
+		t.Error("Block with valid coinbase should pass validation")
 	}
 
-	// Invalid transaction (unsigned)
-	tx2 := transaction.NewTransaction("alice", "bob", 10.0)
-	block.Transactions = append(block.Transactions, tx2)
+	// Invalid transaction (unsigned regular tx)
+	badTx := &transaction.Transaction{
+		ID:      "bad",
+		Inputs:  []transaction.TxInput{{TxID: "abc", OutIndex: 0, ScriptSig: ""}},
+		Outputs: []transaction.TxOutput{{Value: 1000, ScriptPubKey: "bob"}},
+	}
+	block.Transactions = append(block.Transactions, badTx)
 	if block.ValidateTransactions() {
 		t.Error("Block with invalid transactions should fail validation")
 	}
 }
 
 func TestBlockSerialization(t *testing.T) {
-	tx := transaction.NewTransaction("alice", "bob", 10.0)
-	tx.Sign("key")
-	txs := []*transaction.Transaction{tx}
+	coinbase := transaction.NewCoinbaseTransaction("miner1", 5000000000, 1)
+	txs := []*transaction.Transaction{coinbase}
 
 	block := NewBlock(1, txs, "prev_hash", 2, "miner1")
 	block.Nonce = 12345
@@ -166,9 +164,8 @@ func TestBlockSerialization(t *testing.T) {
 }
 
 func TestBlockClone(t *testing.T) {
-	tx := transaction.NewTransaction("alice", "bob", 10.0)
-	tx.Sign("key")
-	txs := []*transaction.Transaction{tx}
+	coinbase := transaction.NewCoinbaseTransaction("miner1", 5000000000, 1)
+	txs := []*transaction.Transaction{coinbase}
 
 	block := NewBlock(1, txs, "prev_hash", 2, "miner1")
 	block.SetHash()

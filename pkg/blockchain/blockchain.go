@@ -9,20 +9,23 @@ import (
 )
 
 var (
-	ErrInvalidBlock    = errors.New("invalid block")
-	ErrInvalidChain    = errors.New("invalid chain")
-	ErrInvalidPrevHash = errors.New("invalid previous hash")
-	ErrInvalidPoW      = errors.New("invalid proof of work")
-	ErrInvalidIndex    = errors.New("invalid block index")
-	ErrBlockExists     = errors.New("block already exists")
-	ErrInvalidGenesis  = errors.New("invalid genesis block")
-	ErrChainTooShort   = errors.New("chain too short to replace")
+	ErrInvalidBlock       = errors.New("invalid block")
+	ErrInvalidChain       = errors.New("invalid chain")
+	ErrInvalidPrevHash    = errors.New("invalid previous hash")
+	ErrInvalidPoW         = errors.New("invalid proof of work")
+	ErrInvalidIndex       = errors.New("invalid block index")
+	ErrBlockExists        = errors.New("block already exists")
+	ErrInvalidGenesis     = errors.New("invalid genesis block")
+	ErrChainTooShort      = errors.New("chain too short to replace")
+	ErrInvalidTransaction = errors.New("invalid transaction")
+	ErrDoubleSpend        = errors.New("double spend detected")
 )
 
 // Blockchain represents the entire blockchain
 type Blockchain struct {
 	Blocks     []*block.Block
 	Difficulty int
+	UTXOSet    *transaction.UTXOSet
 	mu         sync.RWMutex
 }
 
@@ -31,19 +34,32 @@ func NewBlockchain(difficulty int) *Blockchain {
 	bc := &Blockchain{
 		Blocks:     make([]*block.Block, 0),
 		Difficulty: difficulty,
+		UTXOSet:    transaction.NewUTXOSet(),
 	}
 	// Create genesis block
 	genesis := block.NewGenesisBlock(difficulty)
 	bc.Blocks = append(bc.Blocks, genesis)
+	// Process genesis block transactions
+	for _, tx := range genesis.Transactions {
+		bc.UTXOSet.ProcessTransaction(tx)
+	}
 	return bc
 }
 
 // NewBlockchainFromBlocks creates a blockchain from existing blocks
 func NewBlockchainFromBlocks(blocks []*block.Block, difficulty int) *Blockchain {
-	return &Blockchain{
+	bc := &Blockchain{
 		Blocks:     blocks,
 		Difficulty: difficulty,
+		UTXOSet:    transaction.NewUTXOSet(),
 	}
+	// Rebuild UTXO set from blocks
+	for _, b := range blocks {
+		for _, tx := range b.Transactions {
+			bc.UTXOSet.ProcessTransaction(tx)
+		}
+	}
+	return bc
 }
 
 // GetLatestBlock returns the most recent block in the chain
@@ -96,6 +112,12 @@ func (bc *Blockchain) AddBlock(newBlock *block.Block) error {
 	}
 
 	bc.Blocks = append(bc.Blocks, newBlock)
+
+	// Update UTXO set with transactions from the new block
+	for _, tx := range newBlock.Transactions {
+		bc.UTXOSet.ProcessTransaction(tx)
+	}
+
 	return nil
 }
 
@@ -130,9 +152,39 @@ func (bc *Blockchain) validateBlockUnlocked(newBlock *block.Block) error {
 		return ErrInvalidPoW
 	}
 
-	// Validate all transactions
+	// Validate all transactions (basic validation)
 	if !newBlock.ValidateTransactions() {
 		return ErrInvalidBlock
+	}
+
+	// Validate transactions against UTXO set
+	if err := bc.ValidateBlockTransactions(newBlock); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// ValidateBlockTransactions validates all transactions in a block against the UTXO set
+func (bc *Blockchain) ValidateBlockTransactions(newBlock *block.Block) error {
+	// Create a temporary UTXO set copy to track spent outputs within this block
+	tempUTXO := bc.UTXOSet.Copy()
+
+	for _, tx := range newBlock.Transactions {
+		// Coinbase transactions don't need UTXO validation
+		if tx.IsCoinbase() {
+			// Just add the new UTXOs
+			tempUTXO.ProcessTransaction(tx)
+			continue
+		}
+
+		// Validate against current UTXO set
+		if err := tempUTXO.ValidateTransaction(tx); err != nil {
+			return ErrInvalidTransaction
+		}
+
+		// Process the transaction (remove spent, add new)
+		tempUTXO.ProcessTransaction(tx)
 	}
 
 	return nil
@@ -210,8 +262,9 @@ func (bc *Blockchain) ReplaceChain(newBlocks []*block.Block) error {
 		return err
 	}
 
-	// Replace the chain
+	// Replace the chain and UTXO set
 	bc.Blocks = newBlocks
+	bc.UTXOSet = newChain.UTXOSet
 	return nil
 }
 
@@ -271,4 +324,38 @@ func (bc *Blockchain) GetDifficulty() int {
 	bc.mu.RLock()
 	defer bc.mu.RUnlock()
 	return bc.Difficulty
+}
+
+// ValidateTransaction validates a single transaction against the UTXO set
+func (bc *Blockchain) ValidateTransaction(tx *transaction.Transaction) error {
+	bc.mu.RLock()
+	defer bc.mu.RUnlock()
+
+	// Basic validation
+	if !tx.Verify() {
+		return ErrInvalidTransaction
+	}
+
+	// UTXO validation (skip for coinbase)
+	if !tx.IsCoinbase() {
+		if err := bc.UTXOSet.ValidateTransaction(tx); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// GetUTXOSet returns a copy of the current UTXO set
+func (bc *Blockchain) GetUTXOSet() *transaction.UTXOSet {
+	bc.mu.RLock()
+	defer bc.mu.RUnlock()
+	return bc.UTXOSet.Copy()
+}
+
+// GetBalance returns the balance for an address
+func (bc *Blockchain) GetBalance(address string) int64 {
+	bc.mu.RLock()
+	defer bc.mu.RUnlock()
+	return bc.UTXOSet.GetBalance(address)
 }

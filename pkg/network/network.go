@@ -185,12 +185,30 @@ func (m *Miner) IsStopped() bool {
 
 // SubmitTransaction RPC method to receive a transaction from a client
 func (s *RPCService) SubmitTransaction(args *TransactionArgs, reply *TransactionReply) error {
-	tx := transaction.NewTransaction(args.From, args.To, args.Amount)
-	tx.Sign(args.From + "_private_key") // Simplified signing
+	// For simplified demo, create a transaction using available UTXOs
+	utxoSet := s.miner.Blockchain.GetUTXOSet()
+
+	// Convert amount to satoshi
+	amountSatoshi := int64(args.Amount * transaction.SatoshiPerBTC)
+
+	// Try to create a proper UTXO transaction
+	tx, err := utxoSet.CreateTransaction(args.From, args.To, amountSatoshi, args.From+"_private_key")
+	if err != nil {
+		// If no UTXOs available, create a placeholder transaction (for demo)
+		tx = transaction.NewTransaction(args.From, args.To, args.Amount)
+		tx.Sign(args.From + "_private_key")
+	}
 
 	if !tx.Verify() {
 		reply.Success = false
 		reply.Error = "invalid transaction"
+		return nil
+	}
+
+	// Validate against UTXO set
+	if err := s.miner.Blockchain.ValidateTransaction(tx); err != nil {
+		reply.Success = false
+		reply.Error = fmt.Sprintf("transaction validation failed: %v", err)
 		return nil
 	}
 
@@ -231,6 +249,13 @@ func (s *RPCService) ReceiveTransaction(args *BlockArgs, reply *TransactionReply
 		}
 	}
 	s.miner.txMutex.RUnlock()
+
+	// Validate against UTXO set
+	if err := s.miner.Blockchain.ValidateTransaction(tx); err != nil {
+		reply.Success = false
+		reply.Error = fmt.Sprintf("transaction validation failed: %v", err)
+		return nil
+	}
 
 	s.miner.AddTransaction(tx)
 	reply.Success = true
@@ -400,10 +425,43 @@ func (m *Miner) BroadcastTransaction(tx *transaction.Transaction) {
 	}
 }
 
+// filterValidTransactions filters transactions that are valid against current UTXO set
+func (m *Miner) filterValidTransactions(txs []*transaction.Transaction) []*transaction.Transaction {
+	validTxs := make([]*transaction.Transaction, 0)
+
+	// Create a temporary UTXO set to track spending within this batch
+	tempUTXO := m.Blockchain.GetUTXOSet()
+
+	for _, tx := range txs {
+		// Skip coinbase transactions (they shouldn't be in pending)
+		if tx.IsCoinbase() {
+			continue
+		}
+
+		// Validate against temp UTXO set
+		if err := tempUTXO.ValidateTransaction(tx); err != nil {
+			// Invalid transaction, skip it
+			continue
+		}
+
+		// Process transaction to update temp UTXO (prevent double-spend in same block)
+		tempUTXO.ProcessTransaction(tx)
+		validTxs = append(validTxs, tx)
+	}
+
+	return validTxs
+}
+
 // BroadcastBlock broadcasts a block to all peers
 func (m *Miner) BroadcastBlock(b *block.Block) {
 	// Don't broadcast if miner is stopped
 	if m.IsStopped() {
+		return
+	}
+
+	// Validate all transactions before broadcasting
+	if !b.ValidateTransactions() {
+		log.Printf("[%s] Block has invalid transactions, not broadcasting", m.ID)
 		return
 	}
 
@@ -477,15 +535,26 @@ func (m *Miner) miningLoop() {
 // mineBlock attempts to mine a new block
 func (m *Miner) mineBlock() {
 	// Get pending transactions (limit to 10 per block for simplicity)
-	txs := m.GetPendingTransactions()
-	if len(txs) > 10 {
-		txs = txs[:10]
+	pendingTxs := m.GetPendingTransactions()
+
+	// Filter and validate pending transactions against current UTXO set
+	validTxs := m.filterValidTransactions(pendingTxs)
+	if len(validTxs) > 10 {
+		validTxs = validTxs[:10]
 	}
 
-	// Add coinbase transaction (mining reward)
-	coinbase := transaction.NewTransaction("system", m.ID, 50.0) // 50 coin reward
-	coinbase.Sign("system_key")
-	txs = append([]*transaction.Transaction{coinbase}, txs...)
+	// Calculate total fees from transactions
+	var totalFees int64
+	utxoSet := m.Blockchain.GetUTXOSet()
+	for _, tx := range validTxs {
+		totalFees += tx.GetFee(utxoSet)
+	}
+
+	// Add coinbase transaction (mining reward + fees)
+	// 50 BTC = 5,000,000,000 satoshi
+	reward := int64(5000000000) + totalFees
+	coinbase := transaction.NewCoinbaseTransaction(m.ID, reward, m.Blockchain.GetLatestBlock().Index+1)
+	txs := append([]*transaction.Transaction{coinbase}, validTxs...)
 
 	// Create new block
 	newBlock := m.Blockchain.CreateBlock(txs, m.ID)

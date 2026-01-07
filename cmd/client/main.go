@@ -115,14 +115,32 @@ func getChain(minerAddr string) {
 	}
 
 	fmt.Printf("Blockchain (length: %d):\n", len(blocks))
-	fmt.Println("----------------------------------------")
+	fmt.Println("========================================")
 	for _, b := range blocks {
 		fmt.Printf("Block #%d\n", b.Index)
-		fmt.Printf("  Hash:      %s\n", b.Hash)
-		fmt.Printf("  PrevHash:  %s\n", b.PrevHash)
+		fmt.Printf("  Hash:      %s\n", b.Hash[:16]+"...")
+		fmt.Printf("  PrevHash:  %s\n", b.PrevHash[:16]+"...")
 		fmt.Printf("  Nonce:     %d\n", b.Nonce)
 		fmt.Printf("  Miner:     %s\n", b.MinerID)
 		fmt.Printf("  TXs:       %d\n", len(b.Transactions))
+
+		// Show transaction details
+		for i, tx := range b.Transactions {
+			if tx.IsCoinbase() {
+				fmt.Printf("    TX[%d]: Coinbase -> %s (%.2f BTC)\n",
+					i, tx.Outputs[0].ScriptPubKey,
+					float64(tx.Outputs[0].Value)/100000000.0)
+			} else {
+				inputSum := int64(0)
+				outputSum := int64(0)
+				for _, out := range tx.Outputs {
+					outputSum += out.Value
+				}
+				fmt.Printf("    TX[%d]: %d inputs -> %d outputs (%.8f BTC)\n",
+					i, len(tx.Inputs), len(tx.Outputs), float64(outputSum)/100000000.0)
+				_ = inputSum
+			}
+		}
 		fmt.Println("----------------------------------------")
 	}
 }

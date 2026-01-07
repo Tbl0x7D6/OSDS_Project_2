@@ -7,9 +7,9 @@ import (
 )
 
 func createValidBlock(bc *Blockchain, minerID string) *block.Block {
-	tx := transaction.NewTransaction("system", minerID, 50.0)
-	tx.Sign("system_key")
-	txs := []*transaction.Transaction{tx}
+	// Use coinbase transaction for mining reward
+	coinbase := transaction.NewCoinbaseTransaction(minerID, 5000000000, bc.GetLatestBlock().Index+1)
+	txs := []*transaction.Transaction{coinbase}
 
 	newBlock := bc.CreateBlock(txs, minerID)
 
@@ -61,9 +61,8 @@ func TestAddValidBlock(t *testing.T) {
 func TestAddBlockWithInvalidIndex(t *testing.T) {
 	bc := NewBlockchain(2)
 
-	tx := transaction.NewTransaction("system", "miner1", 50.0)
-	tx.Sign("system_key")
-	txs := []*transaction.Transaction{tx}
+	coinbase := transaction.NewCoinbaseTransaction("miner1", 5000000000, 1)
+	txs := []*transaction.Transaction{coinbase}
 
 	// Create block with wrong index
 	latestBlock := bc.GetLatestBlock()
@@ -94,9 +93,8 @@ func TestAddBlockWithInvalidIndex(t *testing.T) {
 func TestAddBlockWithInvalidPrevHash(t *testing.T) {
 	bc := NewBlockchain(2)
 
-	tx := transaction.NewTransaction("system", "miner1", 50.0)
-	tx.Sign("system_key")
-	txs := []*transaction.Transaction{tx}
+	coinbase := transaction.NewCoinbaseTransaction("miner1", 5000000000, 1)
+	txs := []*transaction.Transaction{coinbase}
 
 	// Create block with wrong previous hash
 	newBlock := block.NewBlock(
@@ -126,9 +124,8 @@ func TestAddBlockWithInvalidPrevHash(t *testing.T) {
 func TestAddBlockWithInvalidPoW(t *testing.T) {
 	bc := NewBlockchain(2)
 
-	tx := transaction.NewTransaction("system", "miner1", 50.0)
-	tx.Sign("system_key")
-	txs := []*transaction.Transaction{tx}
+	coinbase := transaction.NewCoinbaseTransaction("miner1", 5000000000, 1)
+	txs := []*transaction.Transaction{coinbase}
 
 	latestBlock := bc.GetLatestBlock()
 	newBlock := block.NewBlock(

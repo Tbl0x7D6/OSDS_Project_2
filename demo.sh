@@ -144,28 +144,34 @@ fi
 echo ""
 
 echo "=============================================="
-echo "Demo 3: Submit transactions via client"
+echo "Demo 3: Mining rewards and UTXO model"
 echo "=============================================="
 echo ""
 
-./bin/miner -id tx_test -address localhost:9021 -difficulty 5 > /tmp/tx_test.log 2>&1 &
+echo "Starting miner to demonstrate UTXO-based transactions..."
+./bin/miner -id tx_miner -address localhost:9021 -difficulty 4 > /tmp/tx_test.log 2>&1 &
 TX_MINER_PID=$!
 sleep 3
 
-echo "Submitting 3 transactions..."
-./bin/client submit -miner localhost:9021 -from alice -to bob -amount 10.5
-./bin/client submit -miner localhost:9021 -from bob -to charlie -amount 5.25
-./bin/client submit -miner localhost:9021 -from charlie -to alice -amount 2.0
+echo "Miner status (initial):"
+./bin/client status -miner localhost:9021
+echo ""
+
+echo "Mining blocks to accumulate mining rewards (coinbase transactions)..."
+sleep 10
 
 echo ""
-echo "Miner status after receiving transactions:"
+echo "Miner status after mining (showing accumulated rewards):"
 ./bin/client status -miner localhost:9021
+
 echo ""
-echo "Waiting for transactions to be mined into blocks..."
-sleep 8
+echo "Getting blockchain to show coinbase transactions:"
+./bin/client chain -miner localhost:9021 2>/dev/null | tail -30
+
 echo ""
-echo "Miner status after mining:"
-./bin/client status -miner localhost:9021
+echo "Note: In UTXO model, users can only spend coins they own."
+echo "Mining rewards are given as coinbase transactions to miners."
+echo "Each block contains a coinbase transaction with 50 BTC reward."
 
 echo ""
 echo "Stopping transaction test miner..."

@@ -38,8 +38,8 @@ func NewBlock(index int64, transactions []*transaction.Transaction, prevHash str
 
 // NewGenesisBlock creates the genesis block (first block in the chain)
 func NewGenesisBlock(difficulty int) *Block {
-	genesisTransaction := transaction.NewTransaction("system", "genesis", 0)
-	genesisTransaction.Sign("genesis_key")
+	// Genesis block uses a coinbase transaction
+	genesisTransaction := transaction.NewCoinbaseTransaction("genesis", 0, 0)
 	block := &Block{
 		Index:        0,
 		Timestamp:    time.Now().UnixNano(),
@@ -113,8 +113,17 @@ func (b *Block) HasValidPoW() bool {
 func (b *Block) Clone() *Block {
 	transactions := make([]*transaction.Transaction, len(b.Transactions))
 	for i, tx := range b.Transactions {
-		txCopy := *tx
-		transactions[i] = &txCopy
+		// Deep copy the transaction
+		inputs := make([]transaction.TxInput, len(tx.Inputs))
+		copy(inputs, tx.Inputs)
+		outputs := make([]transaction.TxOutput, len(tx.Outputs))
+		copy(outputs, tx.Outputs)
+
+		transactions[i] = &transaction.Transaction{
+			ID:      tx.ID,
+			Inputs:  inputs,
+			Outputs: outputs,
+		}
 	}
 
 	return &Block{
