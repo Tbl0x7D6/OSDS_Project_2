@@ -10,8 +10,7 @@ import (
 )
 
 func createTestBlock(difficulty int) *block.Block {
-	tx := transaction.NewTransaction("system", "miner1", 50.0)
-	tx.Sign("system_key")
+	tx := transaction.NewCoinbaseTransaction("miner1", 50, 1)
 	txs := []*transaction.Transaction{tx}
 
 	return block.NewBlock(1, txs, "0000000000000000000000000000000000000000000000000000000000000000", difficulty, "miner1")

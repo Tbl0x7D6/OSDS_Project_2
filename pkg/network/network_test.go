@@ -178,8 +178,7 @@ func TestRejectInvalidBlock(t *testing.T) {
 	defer miner.Stop()
 
 	// Create an invalid block
-	tx := transaction.NewTransaction("system", "attacker", 50.0)
-	tx.Sign("system_key")
+	tx := transaction.NewCoinbaseTransaction("attacker", 50, 1)
 	txs := []*transaction.Transaction{tx}
 
 	invalidBlock := block.NewBlock(1, txs, miner.Blockchain.GetLatestBlock().Hash, 2, "attacker")

@@ -30,24 +30,6 @@ func TestNewCoinbaseTransaction(t *testing.T) {
 	}
 }
 
-func TestNewTransaction(t *testing.T) {
-	tx := NewTransaction("alice", "bob", 10.0)
-
-	if tx.IsCoinbase() {
-		t.Error("Regular transaction should not be coinbase")
-	}
-	if len(tx.Outputs) != 1 {
-		t.Errorf("Expected 1 output, got %d", len(tx.Outputs))
-	}
-	// 10 BTC = 1,000,000,000 satoshi
-	if tx.Outputs[0].Value != 1000000000 {
-		t.Errorf("Expected value 1000000000 satoshi, got %d", tx.Outputs[0].Value)
-	}
-	if tx.Outputs[0].ScriptPubKey != "bob" {
-		t.Errorf("Expected scriptPubKey 'bob', got '%s'", tx.Outputs[0].ScriptPubKey)
-	}
-}
-
 func TestNewTransactionSatoshi(t *testing.T) {
 	tx := NewTransactionSatoshi("alice", "bob", 50000)
 

@@ -14,8 +14,10 @@ A Go implementation of a Bitcoin-like blockchain system featuring Proof of Work 
    - Difficulty level
    - Miner ID
 
-2. **Blockchain**
+2. **Blockchain & UTXO**
    - Genesis block creation
+   - UTXO set management
+   - Transaction validation (Satoshi units, multiple inputs/outputs)
    - Chain validation
    - Longest chain rule for fork resolution
    - Block verification (hash, PoW, transactions)
@@ -89,9 +91,9 @@ Start multiple miners (recommended 5 for demo):
 
 ### Use the Client
 
-Submit a transaction:
+Submit a transaction (amount in satoshi, 1 BTC = 100,000,000 satoshi):
 ```bash
-./bin/client submit -miner localhost:8001 -from alice -to bob -amount 10.5
+./bin/client submit -miner localhost:8001 -from alice -to bob -amount 1000000000
 ```
 
 Check miner status:

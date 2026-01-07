@@ -30,8 +30,8 @@ echo "Demo 1: Running 5 miners and generating 100+ blocks"
 echo "=============================================="
 echo ""
 
-# Start 5 miners
-DIFFICULTY=5  # Moderate difficulty for controlled mining
+# Start 4 miners
+DIFFICULTY=4  # Moderate difficulty for controlled mining
 
 echo "Starting 5 miners with difficulty $DIFFICULTY..."
 ./bin/miner -id miner1 -address localhost:9001 -difficulty $DIFFICULTY \

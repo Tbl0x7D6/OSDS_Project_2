@@ -61,14 +61,6 @@ func NewCoinbaseTransaction(to string, reward int64, blockHeight int64) *Transac
 	return tx
 }
 
-// NewTransaction creates a new transaction (simplified - for demo purposes)
-// In real Bitcoin, you'd need to reference specific UTXOs
-func NewTransaction(from, to string, amount float64) *Transaction {
-	// Convert BTC to satoshi
-	satoshi := int64(amount * SatoshiPerBTC)
-	return NewTransactionSatoshi(from, to, satoshi)
-}
-
 // NewTransactionSatoshi creates a new transaction with amount in satoshi
 func NewTransactionSatoshi(from, to string, amount int64) *Transaction {
 	// This is a simplified transaction creator

@@ -70,7 +70,7 @@ type RPCService struct {
 type TransactionArgs struct {
 	From   string
 	To     string
-	Amount float64
+	Amount int64 // Amount in satoshi
 }
 
 // TransactionReply represents the reply after submitting a transaction
@@ -188,15 +188,12 @@ func (s *RPCService) SubmitTransaction(args *TransactionArgs, reply *Transaction
 	// For simplified demo, create a transaction using available UTXOs
 	utxoSet := s.miner.Blockchain.GetUTXOSet()
 
-	// Convert amount to satoshi
-	amountSatoshi := int64(args.Amount * transaction.SatoshiPerBTC)
-
 	// Try to create a proper UTXO transaction
-	tx, err := utxoSet.CreateTransaction(args.From, args.To, amountSatoshi, args.From+"_private_key")
+	tx, err := utxoSet.CreateTransaction(args.From, args.To, args.Amount, args.From+"_private_key")
 	if err != nil {
-		// If no UTXOs available, create a placeholder transaction (for demo)
-		tx = transaction.NewTransaction(args.From, args.To, args.Amount)
-		tx.Sign(args.From + "_private_key")
+		reply.Success = false
+		reply.Error = fmt.Sprintf("failed to create transaction: %v", err)
+		return nil
 	}
 
 	if !tx.Verify() {
@@ -701,7 +698,7 @@ func (m *Miner) SetDifficulty(difficulty int) {
 type Client struct {
 	ID      string
 	Miners  []PeerInfo
-	Balance float64
+	Balance int64 // Balance in satoshi
 }
 
 // NewClient creates a new client
@@ -713,8 +710,8 @@ func NewClient(id string, miners []PeerInfo) *Client {
 	}
 }
 
-// SubmitTransaction submits a transaction to a miner
-func (c *Client) SubmitTransaction(to string, amount float64) (string, error) {
+// SubmitTransaction submits a transaction to a miner (amount in satoshi)
+func (c *Client) SubmitTransaction(to string, amount int64) (string, error) {
 	if len(c.Miners) == 0 {
 		return "", errors.New("no miners available")
 	}

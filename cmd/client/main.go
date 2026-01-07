@@ -18,7 +18,7 @@ func main() {
 	submitMiner := submitCmd.String("miner", "localhost:8001", "Miner address")
 	submitFrom := submitCmd.String("from", "", "Sender address")
 	submitTo := submitCmd.String("to", "", "Receiver address")
-	submitAmount := submitCmd.Float64("amount", 0, "Amount to send")
+	submitAmount := submitCmd.Int64("amount", 0, "Amount to send (in satoshi)")
 
 	// Status flags
 	statusMiner := statusCmd.String("miner", "localhost:8001", "Miner address")
@@ -69,7 +69,7 @@ func printUsage() {
 	fmt.Println("  chain    Get the current blockchain")
 }
 
-func submitTransaction(minerAddr, from, to string, amount float64) {
+func submitTransaction(minerAddr, from, to string, amount int64) {
 	client := network.NewClient(from, []network.PeerInfo{
 		{ID: "miner", Address: minerAddr},
 	})

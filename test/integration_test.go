@@ -129,8 +129,7 @@ func TestIntegration_CorruptedBlockRejection(t *testing.T) {
 	initialLength := miner.Blockchain.GetLength()
 
 	// Create a valid block first
-	tx := transaction.NewTransaction("system", "attacker", 50.0)
-	tx.Sign("system_key")
+	tx := transaction.NewCoinbaseTransaction("attacker", 50, 1)
 	txs := []*transaction.Transaction{tx}
 
 	validBlock := block.NewBlock(1, txs, miner.Blockchain.GetLatestBlock().Hash, 2, "attacker")
@@ -168,8 +167,7 @@ func TestIntegration_LyingMinerRejection(t *testing.T) {
 	initialLength := honest.Blockchain.GetLength()
 
 	// Create block without proper PoW
-	tx := transaction.NewTransaction("system", "liar", 50.0)
-	tx.Sign("system_key")
+	tx := transaction.NewCoinbaseTransaction("liar", 50, 1)
 	txs := []*transaction.Transaction{tx}
 
 	lyingBlock := block.NewBlock(1, txs, honest.Blockchain.GetLatestBlock().Hash, 2, "liar")
