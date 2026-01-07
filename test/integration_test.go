@@ -281,21 +281,35 @@ func TestIntegration_ChainValidationDetectsCorruption(t *testing.T) {
 
 // Test transaction flow
 func TestIntegration_TransactionFlow(t *testing.T) {
+	// Generate ECDSA key pair for the miner
+	minerKP, err := transaction.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+	minerPubHex := minerKP.GetPublicKeyHex()
+	minerPrivHex := minerKP.GetPrivateKeyHex()
+
+	// Generate key pair for recipient
+	bobKP, err := transaction.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+	bobPubHex := bobKP.GetPublicKeyHex()
+
 	miner := network.NewMiner("miner1", "localhost:18140", 2, nil)
-	err := miner.Start()
+	err = miner.Start()
 	if err != nil {
 		t.Fatalf("Failed to start miner: %v", err)
 	}
 	defer miner.Stop()
 
-	// First mine a few blocks to give the miner some coins
-	miner.StartMining()
-	time.Sleep(500 * time.Millisecond)
-	miner.StopMining()
-	time.Sleep(100 * time.Millisecond)
+	// First, manually add a coinbase UTXO for the miner's public key
+	// In real scenario, the miner would mine blocks and receive coinbase rewards
+	coinbase := transaction.NewCoinbaseTransaction(minerPubHex, 5000000000, 0) // 50 BTC
+	miner.Blockchain.GetUTXOSet().ProcessTransaction(coinbase)
 
 	// Check miner has balance
-	balance := miner.Blockchain.GetBalance("miner1")
+	balance := miner.Blockchain.GetBalance(minerPubHex)
 	if balance == 0 {
 		t.Log("Miner has no balance, skipping transaction test")
 		return
@@ -303,7 +317,7 @@ func TestIntegration_TransactionFlow(t *testing.T) {
 
 	// Create a transaction using miner's UTXOs
 	utxoSet := miner.Blockchain.GetUTXOSet()
-	tx, err := utxoSet.CreateTransaction("miner1", "bob", 1000000000, "miner1_private_key")
+	tx, err := utxoSet.CreateTransaction(minerPubHex, bobPubHex, 1000000000, minerPrivHex)
 	if err != nil {
 		t.Fatalf("Failed to create transaction: %v", err)
 	}
@@ -317,16 +331,11 @@ func TestIntegration_TransactionFlow(t *testing.T) {
 		t.Errorf("Expected 1 pending transaction, got %d", len(pending))
 	}
 
-	// Start mining to include transaction in block
-	miner.StartMining()
-	waitForBlocks([]*network.Miner{miner}, miner.Blockchain.GetLength()+3, 30*time.Second)
-	miner.StopMining()
-
-	// Transaction should be cleared from pending
-	time.Sleep(500 * time.Millisecond)
-	pending = miner.GetPendingTransactions()
-	if len(pending) != 0 {
-		t.Logf("Pending transactions after mining: %d", len(pending))
+	// Verify the balance updated after transaction is processed
+	utxoSet.ProcessTransaction(tx)
+	bobBalance := utxoSet.GetBalance(bobPubHex)
+	if bobBalance != 1000000000 {
+		t.Errorf("Expected bob's balance 1000000000, got %d", bobBalance)
 	}
 }
 

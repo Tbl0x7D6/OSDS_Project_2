@@ -68,9 +68,10 @@ type RPCService struct {
 
 // TransactionArgs represents arguments for submitting a transaction
 type TransactionArgs struct {
-	From   string
-	To     string
-	Amount int64 // Amount in satoshi
+	From       string // Public key (hex-encoded) of sender
+	To         string // Public key (hex-encoded) of recipient
+	Amount     int64  // Amount in satoshi
+	PrivateKey string // Private key (hex-encoded) of sender for signing
 }
 
 // TransactionReply represents the reply after submitting a transaction
@@ -185,11 +186,11 @@ func (m *Miner) IsStopped() bool {
 
 // SubmitTransaction RPC method to receive a transaction from a client
 func (s *RPCService) SubmitTransaction(args *TransactionArgs, reply *TransactionReply) error {
-	// For simplified demo, create a transaction using available UTXOs
+	// Create a transaction using available UTXOs
 	utxoSet := s.miner.Blockchain.GetUTXOSet()
 
-	// Try to create a proper UTXO transaction
-	tx, err := utxoSet.CreateTransaction(args.From, args.To, args.Amount, args.From+"_private_key")
+	// Use the provided ECDSA private key for signing
+	tx, err := utxoSet.CreateTransaction(args.From, args.To, args.Amount, args.PrivateKey)
 	if err != nil {
 		reply.Success = false
 		reply.Error = fmt.Sprintf("failed to create transaction: %v", err)
@@ -202,7 +203,7 @@ func (s *RPCService) SubmitTransaction(args *TransactionArgs, reply *Transaction
 		return nil
 	}
 
-	// Validate against UTXO set
+	// Validate against UTXO set (includes signature verification)
 	if err := s.miner.Blockchain.ValidateTransaction(tx); err != nil {
 		reply.Success = false
 		reply.Error = fmt.Sprintf("transaction validation failed: %v", err)

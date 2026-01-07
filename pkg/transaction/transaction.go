@@ -3,10 +3,15 @@ package transaction
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/big"
+	"sort"
 )
 
 // Satoshi constants
@@ -18,13 +23,13 @@ const (
 type TxInput struct {
 	TxID      string `json:"txid"`      // Previous transaction ID
 	OutIndex  int    `json:"out_index"` // Index of the output in the previous transaction
-	ScriptSig string `json:"scriptsig"` // Simplified: signature proving ownership
+	ScriptSig string `json:"scriptsig"` // Signature proving ownership (signed by private key of UTXO owner)
 }
 
 // TxOutput represents a transaction output
 type TxOutput struct {
 	Value        int64  `json:"value"`        // Amount in satoshi
-	ScriptPubKey string `json:"scriptpubkey"` // Simplified: public key (wallet address)
+	ScriptPubKey string `json:"scriptpubkey"` // Public key (account address)
 }
 
 // Transaction represents a UTXO-based transaction
@@ -39,7 +44,7 @@ func (tx *Transaction) IsCoinbase() bool {
 	return len(tx.Inputs) == 1 && tx.Inputs[0].TxID == "" && tx.Inputs[0].OutIndex == -1
 }
 
-// NewCoinbaseTransaction creates a new coinbase transaction (mining reward)
+// NewCoinbaseTransaction creates a new coinbase transaction (mining reward + fees)
 func NewCoinbaseTransaction(to string, reward int64, blockHeight int64) *Transaction {
 	// Coinbase input has no previous transaction
 	input := TxInput{
@@ -61,33 +66,6 @@ func NewCoinbaseTransaction(to string, reward int64, blockHeight int64) *Transac
 	return tx
 }
 
-// NewTransactionSatoshi creates a new transaction with amount in satoshi
-func NewTransactionSatoshi(from, to string, amount int64) *Transaction {
-	// This is a simplified transaction creator
-	// In a real implementation, you'd need to:
-	// 1. Find UTXOs belonging to 'from'
-	// 2. Select enough UTXOs to cover the amount
-	// 3. Create change output if needed
-
-	input := TxInput{
-		TxID:      "placeholder", // Will be set when actually spending UTXOs
-		OutIndex:  0,
-		ScriptSig: "", // Will be signed later
-	}
-
-	output := TxOutput{
-		Value:        amount,
-		ScriptPubKey: to,
-	}
-
-	tx := &Transaction{
-		Inputs:  []TxInput{input},
-		Outputs: []TxOutput{output},
-	}
-	tx.ID = tx.CalculateHash()
-	return tx
-}
-
 // NewUTXOTransaction creates a transaction spending specific UTXOs
 func NewUTXOTransaction(inputs []TxInput, outputs []TxOutput) *Transaction {
 	tx := &Transaction{
@@ -98,14 +76,19 @@ func NewUTXOTransaction(inputs []TxInput, outputs []TxOutput) *Transaction {
 	return tx
 }
 
-// CalculateHash computes the hash of the transaction
+// CalculateHash computes the hash of the transaction (excludes scriptSig for signing)
 func (tx *Transaction) CalculateHash() string {
 	var buf bytes.Buffer
 
 	for _, in := range tx.Inputs {
 		buf.WriteString(in.TxID)
 		buf.WriteString(fmt.Sprintf("%d", in.OutIndex))
-		buf.WriteString(in.ScriptSig) // Include scriptsig for coinbase uniqueness
+		// Note: ScriptSig is NOT included in the hash for regular transactions
+		// This allows the hash to be stable before and after signing
+		// For coinbase, we include it for uniqueness
+		if tx.IsCoinbase() {
+			buf.WriteString(in.ScriptSig)
+		}
 	}
 
 	for _, out := range tx.Outputs {
@@ -117,43 +100,14 @@ func (tx *Transaction) CalculateHash() string {
 	return hex.EncodeToString(hash[:])
 }
 
-// Sign signs all inputs of the transaction with the given private key
-// Simplified: In real Bitcoin, each input would be signed separately
-func (tx *Transaction) Sign(privateKey string) {
-	// Create signature for the transaction
-	dataToSign := tx.getDataToSign()
-	signatureData := dataToSign + privateKey
-	hash := sha256.Sum256([]byte(signatureData))
-	signature := hex.EncodeToString(hash[:])
-
-	// Apply signature to all inputs
-	for i := range tx.Inputs {
-		tx.Inputs[i].ScriptSig = signature
-	}
-
-	// Recalculate ID after signing (scriptsig not included in hash, but for consistency)
-	tx.ID = tx.CalculateHash()
-}
-
-// SignInput signs a specific input
-func (tx *Transaction) SignInput(index int, privateKey string) {
-	if index < 0 || index >= len(tx.Inputs) {
-		return
-	}
-
-	dataToSign := tx.getDataToSign()
-	signatureData := dataToSign + privateKey
-	hash := sha256.Sum256([]byte(signatureData))
-	tx.Inputs[index].ScriptSig = hex.EncodeToString(hash[:])
-}
-
-// getDataToSign returns the data that should be signed
-func (tx *Transaction) getDataToSign() string {
+// GetDataToSign returns the canonical data to be signed (all scriptSigs cleared)
+func (tx *Transaction) GetDataToSign() string {
 	var buf bytes.Buffer
 
 	for _, in := range tx.Inputs {
 		buf.WriteString(in.TxID)
 		buf.WriteString(fmt.Sprintf("%d", in.OutIndex))
+		// ScriptSig is NOT included - it's cleared before signing
 	}
 
 	for _, out := range tx.Outputs {
@@ -164,8 +118,206 @@ func (tx *Transaction) getDataToSign() string {
 	return buf.String()
 }
 
-// Verify verifies the transaction's basic validity
-// Note: Full UTXO verification requires access to the UTXO set
+// KeyPair represents an ECDSA key pair for signing transactions
+type KeyPair struct {
+	PrivateKey *ecdsa.PrivateKey
+	PublicKey  *ecdsa.PublicKey
+}
+
+// GenerateKeyPair generates a new ECDSA key pair using P-256 curve
+func GenerateKeyPair() (*KeyPair, error) {
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate key pair: %v", err)
+	}
+	return &KeyPair{
+		PrivateKey: privateKey,
+		PublicKey:  &privateKey.PublicKey,
+	}, nil
+}
+
+// PublicKeyToHex converts a public key to hex string for storage
+func PublicKeyToHex(pubKey *ecdsa.PublicKey) string {
+	// Encode as uncompressed point: 04 || X || Y
+	pubBytes := elliptic.Marshal(pubKey.Curve, pubKey.X, pubKey.Y)
+	return hex.EncodeToString(pubBytes)
+}
+
+// HexToPublicKey converts a hex string back to a public key
+func HexToPublicKey(hexStr string) (*ecdsa.PublicKey, error) {
+	pubBytes, err := hex.DecodeString(hexStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid hex string: %v", err)
+	}
+
+	x, y := elliptic.Unmarshal(elliptic.P256(), pubBytes)
+	if x == nil {
+		return nil, fmt.Errorf("invalid public key encoding")
+	}
+
+	return &ecdsa.PublicKey{
+		Curve: elliptic.P256(),
+		X:     x,
+		Y:     y,
+	}, nil
+}
+
+// PrivateKeyToHex converts a private key to hex string for storage
+func PrivateKeyToHex(privKey *ecdsa.PrivateKey) string {
+	return hex.EncodeToString(privKey.D.Bytes())
+}
+
+// HexToPrivateKey converts a hex string back to a private key
+func HexToPrivateKey(hexStr string) (*ecdsa.PrivateKey, error) {
+	privBytes, err := hex.DecodeString(hexStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid hex string: %v", err)
+	}
+
+	privKey := new(ecdsa.PrivateKey)
+	privKey.PublicKey.Curve = elliptic.P256()
+	privKey.D = new(big.Int).SetBytes(privBytes)
+	privKey.PublicKey.X, privKey.PublicKey.Y = privKey.PublicKey.Curve.ScalarBaseMult(privBytes)
+
+	return privKey, nil
+}
+
+// GetPublicKeyHex returns the hex-encoded public key from a KeyPair
+func (kp *KeyPair) GetPublicKeyHex() string {
+	return PublicKeyToHex(kp.PublicKey)
+}
+
+// GetPrivateKeyHex returns the hex-encoded private key from a KeyPair
+func (kp *KeyPair) GetPrivateKeyHex() string {
+	return PrivateKeyToHex(kp.PrivateKey)
+}
+
+// SignECDSA signs data using ECDSA and returns the signature as hex string
+// The signature format is: r || s (each 32 bytes for P-256)
+func SignECDSA(dataToSign string, privateKeyHex string) (string, error) {
+	privateKey, err := HexToPrivateKey(privateKeyHex)
+	if err != nil {
+		return "", fmt.Errorf("invalid private key: %v", err)
+	}
+
+	// Hash the data first
+	hash := sha256.Sum256([]byte(dataToSign))
+
+	// Sign the hash
+	r, s, err := ecdsa.Sign(rand.Reader, privateKey, hash[:])
+	if err != nil {
+		return "", fmt.Errorf("failed to sign: %v", err)
+	}
+
+	// Encode r and s as fixed-size bytes (32 bytes each for P-256)
+	rBytes := r.Bytes()
+	sBytes := s.Bytes()
+
+	// Pad to 32 bytes each
+	signature := make([]byte, 64)
+	copy(signature[32-len(rBytes):32], rBytes)
+	copy(signature[64-len(sBytes):64], sBytes)
+
+	return hex.EncodeToString(signature), nil
+}
+
+// VerifyECDSA verifies an ECDSA signature
+func VerifyECDSA(dataToSign, signatureHex, publicKeyHex string) bool {
+	publicKey, err := HexToPublicKey(publicKeyHex)
+	if err != nil {
+		return false
+	}
+
+	signatureBytes, err := hex.DecodeString(signatureHex)
+	if err != nil || len(signatureBytes) != 64 {
+		return false
+	}
+
+	// Extract r and s from signature
+	r := new(big.Int).SetBytes(signatureBytes[:32])
+	s := new(big.Int).SetBytes(signatureBytes[32:])
+
+	// Hash the data
+	hash := sha256.Sum256([]byte(dataToSign))
+
+	// Verify the signature
+	return ecdsa.Verify(publicKey, hash[:], r, s)
+}
+
+// SignWithPrivateKeys signs the transaction with multiple private keys (ECDSA)
+// Each input must be signed by the owner of the referenced UTXO
+// utxoOwners maps input index -> public key hex
+// privateKeys maps public key hex -> private key hex
+func (tx *Transaction) SignWithPrivateKeys(utxoOwners map[int]string, privateKeys map[string]string) error {
+	if tx.IsCoinbase() {
+		return nil // Coinbase transactions don't need signing
+	}
+
+	// Get the data to sign (with all scriptSigs cleared)
+	dataToSign := tx.GetDataToSign()
+
+	// Sign each input with the corresponding owner's private key
+	for i := range tx.Inputs {
+		owner, ok := utxoOwners[i]
+		if !ok {
+			return fmt.Errorf("no owner specified for input %d", i)
+		}
+
+		privateKey, ok := privateKeys[owner]
+		if !ok {
+			return fmt.Errorf("no private key for owner %s of input %d", owner, i)
+		}
+
+		// Generate ECDSA signature for this input
+		signature, err := SignECDSA(dataToSign, privateKey)
+		if err != nil {
+			return fmt.Errorf("failed to sign input %d: %v", i, err)
+		}
+		tx.Inputs[i].ScriptSig = signature
+	}
+
+	// Recalculate ID
+	tx.ID = tx.CalculateHash()
+	return nil
+}
+
+// Sign signs all inputs with a single private key (for single-owner transactions)
+func (tx *Transaction) Sign(privateKeyHex string) error {
+	if tx.IsCoinbase() {
+		return nil
+	}
+
+	dataToSign := tx.GetDataToSign()
+	signature, err := SignECDSA(dataToSign, privateKeyHex)
+	if err != nil {
+		return fmt.Errorf("failed to sign: %v", err)
+	}
+
+	for i := range tx.Inputs {
+		tx.Inputs[i].ScriptSig = signature
+	}
+
+	tx.ID = tx.CalculateHash()
+	return nil
+}
+
+// SignInput signs a specific input with a private key
+func (tx *Transaction) SignInput(index int, privateKeyHex string) error {
+	if index < 0 || index >= len(tx.Inputs) {
+		return fmt.Errorf("invalid input index: %d", index)
+	}
+
+	dataToSign := tx.GetDataToSign()
+	signature, err := SignECDSA(dataToSign, privateKeyHex)
+	if err != nil {
+		return fmt.Errorf("failed to sign input %d: %v", index, err)
+	}
+	tx.Inputs[index].ScriptSig = signature
+	return nil
+}
+
+// Verify verifies the transaction's basic structural validity
+// Note: Full signature verification requires access to the UTXO set
 func (tx *Transaction) Verify() bool {
 	// Coinbase transactions have special rules
 	if tx.IsCoinbase() {
@@ -177,7 +329,7 @@ func (tx *Transaction) Verify() bool {
 		return false
 	}
 
-	// All inputs must be signed
+	// All inputs must have non-empty values
 	for _, in := range tx.Inputs {
 		if in.ScriptSig == "" {
 			return false
@@ -194,6 +346,29 @@ func (tx *Transaction) Verify() bool {
 		}
 		if out.ScriptPubKey == "" {
 			return false
+		}
+	}
+
+	return true
+}
+
+// VerifySignatures verifies all input signatures against their corresponding UTXO public keys
+// utxoPublicKeys maps input index -> public key hex (scriptPubKey from the referenced UTXO)
+func (tx *Transaction) VerifySignatures(utxoPublicKeys map[int]string) bool {
+	if tx.IsCoinbase() {
+		return true // Coinbase doesn't need signature verification
+	}
+
+	dataToSign := tx.GetDataToSign()
+
+	for i, in := range tx.Inputs {
+		publicKey, ok := utxoPublicKeys[i]
+		if !ok {
+			return false // No public key provided for this input
+		}
+
+		if !VerifyECDSA(dataToSign, in.ScriptSig, publicKey) {
+			return false // Signature verification failed
 		}
 	}
 
@@ -373,6 +548,7 @@ func (us *UTXOSet) ProcessTransaction(tx *Transaction) {
 }
 
 // ValidateTransaction validates a transaction against the UTXO set
+// This includes checking UTXO existence, balance, and signature verification
 func (us *UTXOSet) ValidateTransaction(tx *Transaction) error {
 	// Coinbase transactions don't spend UTXOs
 	if tx.IsCoinbase() {
@@ -380,21 +556,28 @@ func (us *UTXOSet) ValidateTransaction(tx *Transaction) error {
 	}
 
 	var inputTotal int64
+	utxoPublicKeys := make(map[int]string)
 
-	for _, in := range tx.Inputs {
+	for i, in := range tx.Inputs {
 		// Check if UTXO exists
 		utxo := us.FindUTXO(in.TxID, in.OutIndex)
 		if utxo == nil {
 			return fmt.Errorf("UTXO not found: %s:%d", in.TxID, in.OutIndex)
 		}
 
-		// Simplified signature verification:
-		// In real Bitcoin, we'd verify the scriptSig against the scriptPubKey
+		// Check for empty signature
 		if in.ScriptSig == "" {
 			return fmt.Errorf("missing signature for input %s:%d", in.TxID, in.OutIndex)
 		}
 
+		// Store the public key for signature verification
+		utxoPublicKeys[i] = utxo.ScriptPubKey
 		inputTotal += utxo.Value
+	}
+
+	// Verify all signatures
+	if !tx.VerifySignatures(utxoPublicKeys) {
+		return fmt.Errorf("signature verification failed")
 	}
 
 	outputTotal := tx.TotalOutputValue()
@@ -420,7 +603,8 @@ func (us *UTXOSet) Copy() *UTXOSet {
 
 // CreateTransaction creates a transaction from one address to another
 // Automatically selects UTXOs and creates change output
-func (us *UTXOSet) CreateTransaction(from, to string, amount int64, privateKey string) (*Transaction, error) {
+// privateKeyHex is the hex-encoded ECDSA private key
+func (us *UTXOSet) CreateTransaction(from, to string, amount int64, privateKeyHex string) (*Transaction, error) {
 	utxos := us.FindUTXOsForAddress(from)
 
 	var selectedUTXOs []*UTXO
@@ -453,14 +637,80 @@ func (us *UTXOSet) CreateTransaction(from, to string, amount int64, privateKey s
 		{Value: amount, ScriptPubKey: to},
 	}
 
-	// Create change output if needed (excess goes to miner as fee if no change output)
+	// Create change output if needed
 	change := totalInput - amount
 	if change > 0 {
 		outputs = append(outputs, TxOutput{Value: change, ScriptPubKey: from})
 	}
 
 	tx := NewUTXOTransaction(inputs, outputs)
-	tx.Sign(privateKey)
+	if err := tx.Sign(privateKeyHex); err != nil {
+		return nil, fmt.Errorf("failed to sign transaction: %v", err)
+	}
 
 	return tx, nil
+}
+
+// CreateMultiInputTransaction creates a transaction with inputs from multiple owners
+// inputOwners maps input index -> owner public key
+// privateKeys maps owner public key -> private key
+func (us *UTXOSet) CreateMultiInputTransaction(
+	inputSpecs []struct {
+		TxID     string
+		OutIndex int
+	},
+	outputs []TxOutput,
+	privateKeys map[string]string,
+) (*Transaction, error) {
+	// Create inputs and collect owners
+	var inputs []TxInput
+	utxoOwners := make(map[int]string)
+
+	for i, spec := range inputSpecs {
+		utxo := us.FindUTXO(spec.TxID, spec.OutIndex)
+		if utxo == nil {
+			return nil, fmt.Errorf("UTXO not found: %s:%d", spec.TxID, spec.OutIndex)
+		}
+
+		inputs = append(inputs, TxInput{
+			TxID:     spec.TxID,
+			OutIndex: spec.OutIndex,
+		})
+		utxoOwners[i] = utxo.ScriptPubKey
+	}
+
+	// Verify we have private keys for all owners
+	for i, owner := range utxoOwners {
+		if _, ok := privateKeys[owner]; !ok {
+			return nil, fmt.Errorf("missing private key for owner %s of input %d", owner, i)
+		}
+	}
+
+	tx := NewUTXOTransaction(inputs, outputs)
+
+	// Sign with multiple private keys
+	err := tx.SignWithPrivateKeys(utxoOwners, privateKeys)
+	if err != nil {
+		return nil, err
+	}
+
+	return tx, nil
+}
+
+// GetAllUTXOs returns all UTXOs in the set (for debugging/testing)
+func (us *UTXOSet) GetAllUTXOs() []*UTXO {
+	var all []*UTXO
+	for _, outputs := range us.UTXOs {
+		for _, utxo := range outputs {
+			all = append(all, utxo)
+		}
+	}
+	// Sort for deterministic output
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].TxID != all[j].TxID {
+			return all[i].TxID < all[j].TxID
+		}
+		return all[i].OutIndex < all[j].OutIndex
+	})
+	return all
 }

@@ -33,32 +33,42 @@ func TestMinerStartStop(t *testing.T) {
 }
 
 func TestSubmitTransaction(t *testing.T) {
+	// Generate ECDSA key pair for the miner
+	minerKP, err := transaction.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+	minerPubHex := minerKP.GetPublicKeyHex()
+	minerPrivHex := minerKP.GetPrivateKeyHex()
+
+	// Generate key pair for recipient
+	bobKP, err := transaction.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+	bobPubHex := bobKP.GetPublicKeyHex()
+
 	miner := NewMiner("miner1", "localhost:19002", 2, nil)
-	err := miner.Start()
+	err = miner.Start()
 	if err != nil {
 		t.Fatalf("Failed to start miner: %v", err)
 	}
 	defer miner.Stop()
 
-	// First mine a few blocks to give the miner some coins
-	miner.StartMining()
-	time.Sleep(500 * time.Millisecond)
-	miner.StopMining()
-
-	// Wait for mining to stop
-	time.Sleep(100 * time.Millisecond)
+	// Manually add a coinbase UTXO for the miner's public key
+	coinbase := transaction.NewCoinbaseTransaction(minerPubHex, 5000000000, 0)
+	miner.Blockchain.GetUTXOSet().ProcessTransaction(coinbase)
 
 	// Check miner has balance
-	balance := miner.Blockchain.GetBalance("miner1")
+	balance := miner.Blockchain.GetBalance(minerPubHex)
 	if balance == 0 {
 		t.Log("Miner has no balance, skipping transaction test")
 		return
 	}
 
 	// Now submit a transaction using miner's balance
-	// Create a transaction manually since the miner has UTXOs
 	utxoSet := miner.Blockchain.GetUTXOSet()
-	tx, err := utxoSet.CreateTransaction("miner1", "bob", 1000000000, "miner1_private_key")
+	tx, err := utxoSet.CreateTransaction(minerPubHex, bobPubHex, 1000000000, minerPrivHex)
 	if err != nil {
 		t.Fatalf("Failed to create transaction: %v", err)
 	}
@@ -212,6 +222,20 @@ func TestRejectInvalidBlock(t *testing.T) {
 }
 
 func TestTransactionBroadcast(t *testing.T) {
+	// Generate ECDSA key pairs
+	miner1KP, err := transaction.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate miner1 key pair: %v", err)
+	}
+	miner1PubHex := miner1KP.GetPublicKeyHex()
+	miner1PrivHex := miner1KP.GetPrivateKeyHex()
+
+	bobKP, err := transaction.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate bob key pair: %v", err)
+	}
+	bobPubHex := bobKP.GetPublicKeyHex()
+
 	// Create 2 miners
 	peers1 := []PeerInfo{{ID: "miner2", Address: "localhost:19031"}}
 	peers2 := []PeerInfo{{ID: "miner1", Address: "localhost:19030"}}
@@ -224,14 +248,12 @@ func TestTransactionBroadcast(t *testing.T) {
 	defer miner1.Stop()
 	defer miner2.Stop()
 
-	// First mine a few blocks to give miner1 some coins
-	miner1.StartMining()
-	time.Sleep(300 * time.Millisecond)
-	miner1.StopMining()
-	time.Sleep(100 * time.Millisecond)
+	// Create a coinbase transaction for miner1's public key
+	coinbase := transaction.NewCoinbaseTransaction(miner1PubHex, 5000000000, 0)
+	miner1.Blockchain.GetUTXOSet().ProcessTransaction(coinbase)
 
 	// Check miner1 has balance
-	balance := miner1.Blockchain.GetBalance("miner1")
+	balance := miner1.Blockchain.GetBalance(miner1PubHex)
 	if balance == 0 {
 		t.Log("Miner1 has no balance, skipping broadcast test")
 		return
@@ -239,7 +261,7 @@ func TestTransactionBroadcast(t *testing.T) {
 
 	// Create a transaction using miner1's UTXOs
 	utxoSet := miner1.Blockchain.GetUTXOSet()
-	tx, err := utxoSet.CreateTransaction("miner1", "bob", 1000000000, "miner1_private_key")
+	tx, err := utxoSet.CreateTransaction(miner1PubHex, bobPubHex, 1000000000, miner1PrivHex)
 	if err != nil {
 		t.Fatalf("Failed to create transaction: %v", err)
 	}
