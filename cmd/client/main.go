@@ -106,9 +106,7 @@ func main() {
 	transferFrom := transferCmd.String("from", "", "Sender's public key (address)")
 	transferPrivateKey := transferCmd.String("privkey", "", "Sender's private key")
 	transferInputs := transferCmd.String("inputs", "", "Comma-separated list of UTXOs to spend (format: txid:outindex,txid:outindex)")
-	transferTo := transferCmd.String("to", "", "Recipient's public key (address)")
-	transferAmount := transferCmd.Int64("amount", 0, "Amount to send in satoshi")
-	transferChangeTo := transferCmd.String("changeto", "", "Change address (optional, defaults to sender)")
+	transferOutputs := transferCmd.String("outputs", "", "Comma-separated list of outputs (format: address:amount,address:amount)")
 
 	if len(os.Args) < 2 {
 		printUsage()
@@ -134,11 +132,11 @@ func main() {
 
 	case "transfer":
 		transferCmd.Parse(os.Args[2:])
-		if *transferFrom == "" || *transferPrivateKey == "" || *transferInputs == "" || *transferTo == "" || *transferAmount <= 0 {
-			outputError("from, privkey, inputs, to, and amount are required")
+		if *transferFrom == "" || *transferPrivateKey == "" || *transferInputs == "" || *transferOutputs == "" {
+			outputError("from, privkey, inputs, and outputs are required")
 			os.Exit(1)
 		}
-		sendTransfer(*transferMiner, *transferFrom, *transferPrivateKey, *transferInputs, *transferTo, *transferAmount, *transferChangeTo)
+		sendTransfer(*transferMiner, *transferFrom, *transferPrivateKey, *transferInputs, *transferOutputs)
 
 	default:
 		printUsage()
@@ -153,13 +151,13 @@ Usage:
   client wallet                                    Generate a new wallet (keypair)
   client blockchain [-miner <address>] [-detail]  Get blockchain status and parameters
   client balance -address <address> [-miner <address>]  Get wallet balance and UTXOs
-  client transfer -from <address> -privkey <key> -inputs <utxos> -to <address> -amount <satoshi> [-changeto <address>] [-miner <address>]
+  client transfer -from <address> -privkey <key> -inputs <utxos> -outputs <outputs> [-miner <address>]
 
 Commands:
   wallet       Generate a new wallet keypair (outputs JSON)
   blockchain   Get current blockchain status (outputs JSON)
   balance      Get wallet balance and all UTXOs (outputs JSON)
-  transfer     Send a transaction to another address (outputs JSON)
+  transfer     Send a transaction with multiple outputs (outputs JSON)
 
 Options:
   -miner <address>    Miner node address (default: localhost:8001)
@@ -168,9 +166,8 @@ Options:
   -from <address>     Sender's public key (address)
   -privkey <key>      Sender's private key (hex)
   -inputs <utxos>     Comma-separated list of UTXOs to spend (format: txid:outindex,txid:outindex)
-  -to <address>       Recipient's public key (address)
-  -amount <satoshi>   Amount to send in satoshi
-  -changeto <address> Change address (optional, defaults to sender)
+  -outputs <outputs>  Comma-separated list of outputs (format: address:amount,address:amount)
+                      Amount in satoshi. Excess will be miner fee.
 
 All output is in JSON format for frontend integration.
 `
@@ -365,8 +362,8 @@ func convertBlockToOutput(b *block.Block) BlockOutput {
 	}
 }
 
-// sendTransfer creates and sends a transfer transaction
-func sendTransfer(minerAddr, from, privateKey, inputs, to string, amount int64, changeTo string) {
+// sendTransfer creates and sends a transfer transaction with multiple outputs
+func sendTransfer(minerAddr, from, privateKey, inputs, outputs string) {
 	// Parse UTXO inputs
 	inputSpecs, err := parseUTXOInputs(inputs)
 	if err != nil {
@@ -374,9 +371,11 @@ func sendTransfer(minerAddr, from, privateKey, inputs, to string, amount int64, 
 		os.Exit(1)
 	}
 
-	// Set change address to sender if not specified
-	if changeTo == "" {
-		changeTo = from
+	// Parse outputs
+	outputSpecs, err := parseOutputs(outputs)
+	if err != nil {
+		outputError(fmt.Sprintf("failed to parse outputs: %v", err))
+		os.Exit(1)
 	}
 
 	// Connect to miner
@@ -387,7 +386,7 @@ func sendTransfer(minerAddr, from, privateKey, inputs, to string, amount int64, 
 	}
 	defer client.Close()
 
-	// Get blockchain to calculate change amount
+	// Get blockchain to validate UTXO ownership
 	chainArgs := &network.ChainArgs{StartIndex: 0}
 	var chainReply network.ChainReply
 	err = client.Call("RPCService.GetChain", chainArgs, &chainReply)
@@ -415,7 +414,7 @@ func sendTransfer(minerAddr, from, privateKey, inputs, to string, amount int64, 
 		}
 	}
 
-	// Calculate total input value
+	// Calculate total input value and validate ownership
 	var totalInput int64
 	for _, spec := range inputSpecs {
 		utxo := utxoSet.FindUTXO(spec.TxID, spec.OutIndex)
@@ -430,33 +429,23 @@ func sendTransfer(minerAddr, from, privateKey, inputs, to string, amount int64, 
 		totalInput += utxo.Value
 	}
 
-	// Check if we have enough funds
-	if totalInput < amount {
-		outputError(fmt.Sprintf("insufficient funds: have %d satoshi, need %d satoshi", totalInput, amount))
+	// Calculate total output value
+	var totalOutput int64
+	for _, out := range outputSpecs {
+		totalOutput += out.Value
+	}
+
+	// Calculate miner fee (can be 0 or positive, but not negative)
+	minerFee := totalInput - totalOutput
+	if minerFee < 0 {
+		outputError(fmt.Sprintf("insufficient funds: input=%d satoshi, output=%d satoshi, deficit=%d satoshi", totalInput, totalOutput, -minerFee))
 		os.Exit(1)
-	}
-
-	// Create outputs
-	outputs := []transaction.TxOutput{
-		{
-			Value:        amount,
-			ScriptPubKey: to,
-		},
-	}
-
-	// Add change output if there's any change
-	change := totalInput - amount
-	if change > 0 {
-		outputs = append(outputs, transaction.TxOutput{
-			Value:        change,
-			ScriptPubKey: changeTo,
-		})
 	}
 
 	// Create transaction args for RPC
 	txArgs := &network.TransactionArgs{
 		InputSpecs:  inputSpecs,
-		Outputs:     outputs,
+		Outputs:     outputSpecs,
 		PrivateKeys: map[string]string{from: privateKey},
 	}
 
@@ -475,9 +464,9 @@ func sendTransfer(minerAddr, from, privateKey, inputs, to string, amount int64, 
 	}
 
 	if txReply.Success {
-		output.Message = fmt.Sprintf("Transfer successful! Sent %d satoshi (%.8f BTC) to %s", amount, float64(amount)/transaction.SatoshiPerBTC, to)
-		if change > 0 {
-			output.Message += fmt.Sprintf(". Change: %d satoshi (%.8f BTC)", change, float64(change)/transaction.SatoshiPerBTC)
+		output.Message = fmt.Sprintf("Transfer successful! %d outputs, total: %d satoshi (%.8f BTC)", len(outputSpecs), totalOutput, float64(totalOutput)/transaction.SatoshiPerBTC)
+		if minerFee > 0 {
+			output.Message += fmt.Sprintf(". Miner fee: %d satoshi (%.8f BTC)", minerFee, float64(minerFee)/transaction.SatoshiPerBTC)
 		}
 	} else {
 		output.Error = txReply.Error
@@ -519,6 +508,40 @@ func parseUTXOInputs(inputs string) ([]struct {
 	}
 
 	return specs, nil
+}
+
+// parseOutputs parses comma-separated outputs (format: address:amount,address:amount)
+func parseOutputs(outputs string) ([]transaction.TxOutput, error) {
+	var txOutputs []transaction.TxOutput
+
+	parts := splitAndTrim(outputs, ",")
+	for _, part := range parts {
+		pair := splitAndTrim(part, ":")
+		if len(pair) != 2 {
+			return nil, fmt.Errorf("invalid output format: %s (expected address:amount)", part)
+		}
+
+		var amount int64
+		_, err := fmt.Sscanf(pair[1], "%d", &amount)
+		if err != nil {
+			return nil, fmt.Errorf("invalid amount: %s", pair[1])
+		}
+
+		if amount <= 0 {
+			return nil, fmt.Errorf("amount must be positive: %d", amount)
+		}
+
+		txOutputs = append(txOutputs, transaction.TxOutput{
+			Value:        amount,
+			ScriptPubKey: pair[0],
+		})
+	}
+
+	if len(txOutputs) == 0 {
+		return nil, fmt.Errorf("no valid outputs")
+	}
+
+	return txOutputs, nil
 }
 
 // splitAndTrim splits a string by delimiter and trims whitespace

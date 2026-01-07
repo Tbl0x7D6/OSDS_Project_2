@@ -35,11 +35,8 @@ export function TransferManager() {
   // UTXO selection
   const [selectedUTXOs, setSelectedUTXOs] = useState<Set<string>>(new Set());
   
-  // Transfer details
-  const [recipientAddress, setRecipientAddress] = useState('');
-  const [amountBTC, setAmountBTC] = useState('');
-  const [changeAddress, setChangeAddress] = useState('');
-  const [useCustomChange, setUseCustomChange] = useState(false);
+  // Output management
+  const [outputs, setOutputs] = useState<Array<{ address: string; amount: string }>>([{ address: '', amount: '' }]);
   
   // Transfer status
   const [sending, setSending] = useState(false);
@@ -119,13 +116,45 @@ export function TransferManager() {
     setSelectedUTXOs(new Set());
   };
 
+  // Add output
+  const addOutput = () => {
+    setOutputs([...outputs, { address: '', amount: '' }]);
+  };
+
+  // Remove output
+  const removeOutput = (index: number) => {
+    if (outputs.length > 1) {
+      setOutputs(outputs.filter((_, i) => i !== index));
+    }
+  };
+
+  // Update output
+  const updateOutput = (index: number, field: 'address' | 'amount', value: string) => {
+    const newOutputs = [...outputs];
+    newOutputs[index][field] = value;
+    setOutputs(newOutputs);
+  };
+
+  // Calculate total output value
+  const getTotalOutput = (): number => {
+    return outputs.reduce((sum, output) => {
+      const amount = parseFloat(output.amount || '0');
+      return sum + btcToSatoshi(amount);
+    }, 0);
+  };
+
+  // Calculate miner fee
+  const getMinerFee = (): number => {
+    return getSelectedTotal() - getTotalOutput();
+  };
+
   // Send transfer
   const handleSendTransfer = async () => {
     // Validation
-    if (!senderAddress || !privateKey || !recipientAddress || !amountBTC) {
+    if (!senderAddress || !privateKey) {
       toaster.create({
         title: '信息不完整',
-        description: '请填写所有必填字段',
+        description: '请填写发送者地址和私钥',
         type: 'error',
       });
       return;
@@ -140,22 +169,34 @@ export function TransferManager() {
       return;
     }
 
-    const amountSatoshi = btcToSatoshi(parseFloat(amountBTC));
-    const selectedTotal = getSelectedTotal();
-
-    if (amountSatoshi <= 0) {
+    // Validate outputs
+    const validOutputs = outputs.filter(o => o.address && o.amount && parseFloat(o.amount) > 0);
+    if (validOutputs.length === 0) {
       toaster.create({
-        title: '金额无效',
-        description: '转账金额必须大于0',
+        title: '输出无效',
+        description: '请至少添加一个有效的输出（地址和金额）',
         type: 'error',
       });
       return;
     }
 
-    if (amountSatoshi > selectedTotal) {
+    const totalOutput = getTotalOutput();
+    const selectedTotal = getSelectedTotal();
+    const minerFee = getMinerFee();
+
+    if (totalOutput > selectedTotal) {
       toaster.create({
         title: '余额不足',
-        description: `选中的UTXO总额: ${satoshiToBTC(selectedTotal).toFixed(8)} BTC，需要: ${amountBTC} BTC`,
+        description: `输入总额: ${satoshiToBTC(selectedTotal).toFixed(8)} BTC，输出总额: ${satoshiToBTC(totalOutput).toFixed(8)} BTC`,
+        type: 'error',
+      });
+      return;
+    }
+
+    if (minerFee < 0) {
+      toaster.create({
+        title: '金额错误',
+        description: '输出总额不能超过输入总额',
         type: 'error',
       });
       return;
@@ -164,18 +205,19 @@ export function TransferManager() {
     // Build inputs string
     const inputsStr = Array.from(selectedUTXOs).join(',');
 
+    // Build outputs array
+    const outputItems = validOutputs.map(o => ({
+      address: o.address,
+      amount: btcToSatoshi(parseFloat(o.amount)),
+    }));
+
     const transferData: TransferInput = {
       from: senderAddress,
       privateKey: privateKey,
       inputs: inputsStr,
-      to: recipientAddress,
-      amount: amountSatoshi,
+      outputs: outputItems,
       miner: minerAddress,
     };
-
-    if (useCustomChange && changeAddress) {
-      transferData.changeTo = changeAddress;
-    }
 
     setSending(true);
     setTransferResult(null);
@@ -211,9 +253,7 @@ export function TransferManager() {
 
           // Reset form
           setSelectedUTXOs(new Set());
-          setRecipientAddress('');
-          setAmountBTC('');
-          setChangeAddress('');
+          setOutputs([{ address: '', amount: '' }]);
           
           // Reload balance after a short delay
           setTimeout(() => {
@@ -407,93 +447,120 @@ export function TransferManager() {
       {walletStatus && !balanceError && selectedUTXOs.size > 0 && (
         <Card.Root mb={6}>
           <Card.Header>
-            <Text fontSize="lg" fontWeight="semibold">
-              转账详情
-            </Text>
+            <Flex justify="space-between" align="center">
+              <Text fontSize="lg" fontWeight="semibold">
+                输出管理
+              </Text>
+              <Button size="sm" onClick={addOutput} colorScheme="blue">
+                <FiSend />
+                添加输出
+              </Button>
+            </Flex>
           </Card.Header>
           <Card.Body>
             <VStack align="stretch" gap={4}>
-              <Box>
-                <Text mb={2} fontWeight="medium">接收者地址</Text>
-                <Input
-                  value={recipientAddress}
-                  onChange={(e) => setRecipientAddress(e.target.value)}
-                  placeholder="输入接收者的公钥地址"
-                  fontFamily="mono"
-                  fontSize="sm"
-                />
-              </Box>
-
-              <Box>
-                <Text mb={2} fontWeight="medium">转账金额 (BTC)</Text>
-                <Input
-                  type="number"
-                  step="0.00000001"
-                  value={amountBTC}
-                  onChange={(e) => setAmountBTC(e.target.value)}
-                  placeholder="0.00000000"
-                />
-                <Text fontSize="sm" color="fg.muted" mt={1}>
-                  可用: {satoshiToBTC(getSelectedTotal()).toFixed(8)} BTC
-                </Text>
-              </Box>
-
-              <Box>
-                <Checkbox.Root
-                  checked={useCustomChange}
-                  onCheckedChange={(details) => setUseCustomChange(details.checked === true)}
-                >
-                  <Checkbox.HiddenInput />
-                  <Checkbox.Control>
-                    <Checkbox.Indicator />
-                  </Checkbox.Control>
-                  <Checkbox.Label>
-                    <Text fontWeight="medium">使用自定义找零地址</Text>
-                  </Checkbox.Label>
-                </Checkbox.Root>
-                {useCustomChange && (
-                  <Input
-                    value={changeAddress}
-                    onChange={(e) => setChangeAddress(e.target.value)}
-                    placeholder="找零地址 (留空则返回发送者地址)"
-                    fontFamily="mono"
-                    fontSize="sm"
-                    mt={2}
-                  />
-                )}
-              </Box>
+              {/* Outputs list */}
+              {outputs.map((output, index) => (
+                <Card.Root key={index} variant="outline" borderColor="border">
+                  <Card.Body>
+                    <Flex justify="space-between" align="center" mb={3}>
+                      <Badge>输出 #{index + 1}</Badge>
+                      {outputs.length > 1 && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          colorScheme="red"
+                          onClick={() => removeOutput(index)}
+                        >
+                          <FiAlertCircle />
+                          删除
+                        </Button>
+                      )}
+                    </Flex>
+                    <VStack align="stretch" gap={3}>
+                      <Box>
+                        <Text mb={2} fontSize="sm" fontWeight="medium">
+                          接收者地址
+                        </Text>
+                        <Input
+                          value={output.address}
+                          onChange={(e) => updateOutput(index, 'address', e.target.value)}
+                          placeholder="输入接收者的公钥地址"
+                          fontFamily="mono"
+                          fontSize="sm"
+                        />
+                      </Box>
+                      <Box>
+                        <Text mb={2} fontSize="sm" fontWeight="medium">
+                          金额 (BTC)
+                        </Text>
+                        <Input
+                          type="number"
+                          step="0.00000001"
+                          value={output.amount}
+                          onChange={(e) => updateOutput(index, 'amount', e.target.value)}
+                          placeholder="0.00000000"
+                        />
+                      </Box>
+                    </VStack>
+                  </Card.Body>
+                </Card.Root>
+              ))}
 
               <Separator />
 
               {/* Summary */}
-              <Box p={3} bg="bg.muted" borderRadius="md">
-                <VStack align="stretch" gap={2} fontSize="sm">
+              <Box p={4} bg="bg.muted" borderRadius="md">
+                <VStack align="stretch" gap={2}>
                   <Flex justify="space-between">
-                    <Text color="fg.muted">输入总额:</Text>
-                    <Text fontWeight="semibold">{satoshiToBTC(getSelectedTotal()).toFixed(8)} BTC</Text>
-                  </Flex>
-                  <Flex justify="space-between">
-                    <Text color="fg.muted">转账金额:</Text>
-                    <Text fontWeight="semibold">{amountBTC || '0.00000000'} BTC</Text>
-                  </Flex>
-                  <Flex justify="space-between">
-                    <Text color="fg.muted">找零:</Text>
-                    <Text fontWeight="semibold" colorPalette="blue" color="blue.fg">
-                      {(satoshiToBTC(getSelectedTotal()) - parseFloat(amountBTC || '0')).toFixed(8)} BTC
+                    <Text fontWeight="medium" color="fg.muted">
+                      输入总额:
+                    </Text>
+                    <Text fontWeight="bold" colorPalette="green" color="green.fg">
+                      {satoshiToBTC(getSelectedTotal()).toFixed(8)} BTC
                     </Text>
                   </Flex>
+                  <Flex justify="space-between">
+                    <Text fontWeight="medium" color="fg.muted">
+                      输出总额:
+                    </Text>
+                    <Text fontWeight="bold">
+                      {satoshiToBTC(getTotalOutput()).toFixed(8)} BTC
+                    </Text>
+                  </Flex>
+                  <Separator />
+                  <Flex justify="space-between">
+                    <Text fontWeight="medium" color="fg.muted">
+                      矿工费用:
+                    </Text>
+                    <Text 
+                      fontWeight="bold" 
+                      colorPalette={getMinerFee() >= 0 ? 'blue' : 'red'}
+                      color={getMinerFee() >= 0 ? 'blue.fg' : 'red.fg'}
+                    >
+                      {satoshiToBTC(getMinerFee()).toFixed(8)} BTC
+                    </Text>
+                  </Flex>
+                  {getMinerFee() < 0 && (
+                    <Text fontSize="sm" colorPalette="red" color="red.fg">
+                      ⚠️ 输出总额超过输入总额
+                    </Text>
+                  )}
+                  <Text fontSize="xs" color="fg.muted" mt={2}>
+                    💡 提示: 多余的金额将作为矿工小费
+                  </Text>
                 </VStack>
               </Box>
 
               <Button
                 onClick={handleSendTransfer}
                 loading={sending}
-                disabled={!recipientAddress || !amountBTC || parseFloat(amountBTC) <= 0}
+                disabled={getMinerFee() < 0}
                 colorScheme="green"
                 size="lg"
               >
                 <FiSend />
-                发送转账
+                发送交易
               </Button>
             </VStack>
           </Card.Body>

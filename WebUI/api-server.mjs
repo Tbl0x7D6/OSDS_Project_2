@@ -111,27 +111,35 @@ app.get('/api/wallet/:address/balance', async (req, res) => {
 /**
  * POST /api/transaction/transfer
  * Send a transfer transaction
- * Body: { from, privateKey, inputs, to, amount, changeTo, miner }
+ * Body: { from, privateKey, inputs, outputs, miner }
  * inputs format: "txid:outindex,txid:outindex,..."
+ * outputs format: [{ address, amount }, ...]
  */
 app.post('/api/transaction/transfer', async (req, res) => {
   try {
-    const { from, privateKey, inputs, to, amount, changeTo, miner } = req.body;
+    const { from, privateKey, inputs, outputs, miner } = req.body;
     
-    if (!from || !privateKey || !inputs || !to || !amount) {
+    if (!from || !privateKey || !inputs || !outputs || !Array.isArray(outputs)) {
       return res.status(400).json({ 
-        error: 'Missing required fields: from, privateKey, inputs, to, amount' 
+        error: 'Missing required fields: from, privateKey, inputs, outputs' 
       });
     }
     
     const minerAddr = miner || DEFAULT_MINER;
-    const changeAddr = changeTo || '';
     
-    let cmd = `${CLI_PATH} transfer -from "${from}" -privkey "${privateKey}" -inputs "${inputs}" -to "${to}" -amount ${amount} -miner ${minerAddr}`;
+    // Build outputs string format: "address1:amount1,address2:amount2"
+    const outputsStr = outputs
+      .filter(o => o.address && o.amount)
+      .map(o => `${o.address}:${o.amount}`)
+      .join(',');
     
-    if (changeAddr) {
-      cmd += ` -changeto "${changeAddr}"`;
+    if (!outputsStr) {
+      return res.status(400).json({ 
+        error: 'At least one valid output is required' 
+      });
     }
+    
+    const cmd = `${CLI_PATH} transfer -from "${from}" -privkey "${privateKey}" -inputs "${inputs}" -outputs "${outputsStr}" -miner ${minerAddr}`;
     
     const result = await executeCLI(cmd);
     

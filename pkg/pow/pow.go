@@ -4,6 +4,7 @@ package pow
 import (
 	"blockchain/pkg/block"
 	"context"
+	"math/rand/v2"
 	"strings"
 	"sync/atomic"
 )
@@ -37,7 +38,8 @@ func GetTarget(difficulty int) string {
 // Mine performs the mining operation to find a valid nonce
 // Optional callback for progress reporting (can be nil)
 func (pow *ProofOfWork) Mine(ctx context.Context, callback func(nonce int64)) *MiningResult {
-	var nonce int64 = 0
+	// Start from a random nonce to distribute mining attempts across miners
+	var nonce int64 = rand.Int64()
 	target := GetTarget(pow.Difficulty)
 	reportInterval := int64(100000) // Report every 100k attempts
 
@@ -83,8 +85,9 @@ func (pow *ProofOfWork) MineParallel(ctx context.Context, workers int) *MiningRe
 
 	for i := 0; i < workers; i++ {
 		go func(workerID int) {
-			// Each worker starts from different nonce to avoid duplication
-			var nonce int64 = int64(workerID)
+			// Each worker starts from a random nonce + worker offset to avoid duplication
+			// This ensures different miners and workers explore different nonce spaces
+			var nonce int64 = rand.Int64() + int64(workerID)
 			target := GetTarget(pow.Difficulty)
 
 			// Create a copy of the block for this worker

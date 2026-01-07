@@ -75,13 +75,16 @@ export interface ErrorOutput {
   error: string;
 }
 
+export interface OutputItem {
+  address: string;
+  amount: number; // in satoshi
+}
+
 export interface TransferInput {
   from: string;
   privateKey: string;
   inputs: string; // Format: "txid:outindex,txid:outindex,..."
-  to: string;
-  amount: number; // in satoshi
-  changeTo?: string;
+  outputs: OutputItem[]; // Multiple outputs
   miner?: string;
 }
 
