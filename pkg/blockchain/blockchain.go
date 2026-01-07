@@ -72,28 +72,6 @@ func (bc *Blockchain) GetLatestBlock() *block.Block {
 	return bc.Blocks[len(bc.Blocks)-1]
 }
 
-// GetBlockByIndex returns the block at the specified index
-func (bc *Blockchain) GetBlockByIndex(index int64) *block.Block {
-	bc.mu.RLock()
-	defer bc.mu.RUnlock()
-	if index < 0 || index >= int64(len(bc.Blocks)) {
-		return nil
-	}
-	return bc.Blocks[index]
-}
-
-// GetBlockByHash returns the block with the specified hash
-func (bc *Blockchain) GetBlockByHash(hash string) *block.Block {
-	bc.mu.RLock()
-	defer bc.mu.RUnlock()
-	for _, b := range bc.Blocks {
-		if b.Hash == hash {
-			return b
-		}
-	}
-	return nil
-}
-
 // GetLength returns the number of blocks in the chain
 func (bc *Blockchain) GetLength() int {
 	bc.mu.RLock()
@@ -119,13 +97,6 @@ func (bc *Blockchain) AddBlock(newBlock *block.Block) error {
 	}
 
 	return nil
-}
-
-// ValidateBlock validates a single block against the chain
-func (bc *Blockchain) ValidateBlock(newBlock *block.Block) error {
-	bc.mu.RLock()
-	defer bc.mu.RUnlock()
-	return bc.validateBlockUnlocked(newBlock)
 }
 
 // validateBlockUnlocked validates a block without acquiring the lock

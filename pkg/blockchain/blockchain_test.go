@@ -241,47 +241,6 @@ func TestRejectShorterChain(t *testing.T) {
 	}
 }
 
-func TestGetBlockByIndex(t *testing.T) {
-	bc := NewBlockchain(2)
-
-	newBlock := createValidBlock(bc, "miner1")
-	bc.AddBlock(newBlock)
-
-	// Get existing block
-	block := bc.GetBlockByIndex(1)
-	if block == nil {
-		t.Error("Expected to find block at index 1")
-	}
-	if block.Index != 1 {
-		t.Errorf("Expected block index 1, got %d", block.Index)
-	}
-
-	// Get non-existing block
-	block = bc.GetBlockByIndex(100)
-	if block != nil {
-		t.Error("Expected nil for non-existing block index")
-	}
-}
-
-func TestGetBlockByHash(t *testing.T) {
-	bc := NewBlockchain(2)
-
-	newBlock := createValidBlock(bc, "miner1")
-	bc.AddBlock(newBlock)
-
-	// Get existing block
-	block := bc.GetBlockByHash(newBlock.Hash)
-	if block == nil {
-		t.Error("Expected to find block by hash")
-	}
-
-	// Get non-existing block
-	block = bc.GetBlockByHash("nonexistent_hash")
-	if block != nil {
-		t.Error("Expected nil for non-existing block hash")
-	}
-}
-
 func TestSetDifficulty(t *testing.T) {
 	bc := NewBlockchain(2)
 
