@@ -33,10 +33,12 @@ A Go implementation of a Bitcoin-like blockchain system featuring Proof of Work 
    - Block broadcasting
    - Chain synchronization
 
-5. **Client/Wallet**
-   - Transaction submission
-   - Chain querying
-   - Miner status checking
+5. **Client/Wallet** (JSON CLI Tool)
+   - Wallet generation (ECDSA keypair)
+   - Blockchain status querying
+   - Balance and UTXO querying
+   - JSON output for frontend integration
+   - Full TypeScript type definitions
 
 ## Project Structure
 
@@ -91,20 +93,39 @@ Start multiple miners (recommended 5 for demo):
 
 ### Use the Client
 
-Submit a transaction (amount in satoshi, 1 BTC = 100,000,000 satoshi):
+The new client tool provides JSON output for easy frontend integration.
+
+#### Generate a wallet
 ```bash
-./bin/client submit -miner localhost:8001 -from alice -to bob -amount 1000000000
+./bin/client wallet
 ```
 
-Check miner status:
-```bash
-./bin/client status -miner localhost:8001
+Output:
+```json
+{
+  "address": "04a1b2c3...",
+  "private_key": "d4e5f6...",
+  "created_at": "2026-01-07T10:30:00Z"
+}
 ```
 
-View the blockchain:
+#### Get blockchain status
 ```bash
-./bin/client chain -miner localhost:8001
+./bin/client blockchain
+# Or with detailed block information
+./bin/client blockchain -detail
 ```
+
+#### Check wallet balance
+```bash
+./bin/client balance -address <wallet-address>
+```
+
+For detailed client documentation, see:
+- [Client Usage Guide](CLIENT_README.md)
+- [Integration Guide](INTEGRATION_GUIDE.md)
+- [TypeScript Types](client-types.ts)
+- [Examples](examples/README.md)
 
 ### Run the Demo
 
