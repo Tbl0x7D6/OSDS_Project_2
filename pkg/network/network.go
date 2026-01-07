@@ -68,10 +68,12 @@ type RPCService struct {
 
 // TransactionArgs represents arguments for submitting a transaction
 type TransactionArgs struct {
-	From       string // Public key (hex-encoded) of sender
-	To         string // Public key (hex-encoded) of recipient
-	Amount     int64  // Amount in satoshi
-	PrivateKey string // Private key (hex-encoded) of sender for signing
+	InputSpecs []struct {
+		TxID     string
+		OutIndex int
+	} // UTXOs to spend
+	Outputs     []transaction.TxOutput // Transaction outputs
+	PrivateKeys map[string]string      // Map of public key hex -> private key hex
 }
 
 // TransactionReply represents the reply after submitting a transaction
@@ -186,11 +188,11 @@ func (m *Miner) IsStopped() bool {
 
 // SubmitTransaction RPC method to receive a transaction from a client
 func (s *RPCService) SubmitTransaction(args *TransactionArgs, reply *TransactionReply) error {
-	// Create a transaction using available UTXOs
+	// Create a transaction using the provided UTXO inputs and outputs
 	utxoSet := s.miner.Blockchain.GetUTXOSet()
 
-	// Use the provided ECDSA private key for signing
-	tx, err := utxoSet.CreateTransaction(args.From, args.To, args.Amount, args.PrivateKey)
+	// Use CreateTransaction with the new signature
+	tx, err := utxoSet.CreateTransaction(args.InputSpecs, args.Outputs, args.PrivateKeys)
 	if err != nil {
 		reply.Success = false
 		reply.Error = fmt.Sprintf("failed to create transaction: %v", err)
@@ -697,22 +699,30 @@ func (m *Miner) SetDifficulty(difficulty int) {
 
 // Client represents a blockchain client (wallet)
 type Client struct {
-	ID      string
-	Miners  []PeerInfo
-	Balance int64 // Balance in satoshi
+	ID     string
+	Miners []PeerInfo
 }
 
 // NewClient creates a new client
 func NewClient(id string, miners []PeerInfo) *Client {
 	return &Client{
-		ID:      id,
-		Miners:  miners,
-		Balance: 0,
+		ID:     id,
+		Miners: miners,
 	}
 }
 
-// SubmitTransaction submits a transaction to a miner (amount in satoshi)
-func (c *Client) SubmitTransaction(to string, amount int64) (string, error) {
+// SubmitTransaction submits a transaction to a miner
+// inputSpecs: UTXOs to spend
+// outputs: transaction outputs
+// privateKeys: map of public key -> private key for signing
+func (c *Client) SubmitTransaction(
+	inputSpecs []struct {
+		TxID     string
+		OutIndex int
+	},
+	outputs []transaction.TxOutput,
+	privateKeys map[string]string,
+) (string, error) {
 	if len(c.Miners) == 0 {
 		return "", errors.New("no miners available")
 	}
@@ -726,9 +736,9 @@ func (c *Client) SubmitTransaction(to string, amount int64) (string, error) {
 		defer client.Close()
 
 		args := &TransactionArgs{
-			From:   c.ID,
-			To:     to,
-			Amount: amount,
+			InputSpecs:  inputSpecs,
+			Outputs:     outputs,
+			PrivateKeys: privateKeys,
 		}
 		var reply TransactionReply
 		err = client.Call("RPCService.SubmitTransaction", args, &reply)

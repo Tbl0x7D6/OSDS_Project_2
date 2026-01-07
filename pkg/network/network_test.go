@@ -68,7 +68,20 @@ func TestSubmitTransaction(t *testing.T) {
 
 	// Now submit a transaction using miner's balance
 	utxoSet := miner.Blockchain.GetUTXOSet()
-	tx, err := utxoSet.CreateTransaction(minerPubHex, bobPubHex, 1000000000, minerPrivHex)
+	inputSpecs := []struct {
+		TxID     string
+		OutIndex int
+	}{
+		{TxID: coinbase.ID, OutIndex: 0},
+	}
+	outputs := []transaction.TxOutput{
+		{Value: 1000000000, ScriptPubKey: bobPubHex},
+		{Value: 4000000000, ScriptPubKey: minerPubHex}, // change
+	}
+	privateKeys := map[string]string{
+		minerPubHex: minerPrivHex,
+	}
+	tx, err := utxoSet.CreateTransaction(inputSpecs, outputs, privateKeys)
 	if err != nil {
 		t.Fatalf("Failed to create transaction: %v", err)
 	}
@@ -261,7 +274,20 @@ func TestTransactionBroadcast(t *testing.T) {
 
 	// Create a transaction using miner1's UTXOs
 	utxoSet := miner1.Blockchain.GetUTXOSet()
-	tx, err := utxoSet.CreateTransaction(miner1PubHex, bobPubHex, 1000000000, miner1PrivHex)
+	inputSpecs := []struct {
+		TxID     string
+		OutIndex int
+	}{
+		{TxID: coinbase.ID, OutIndex: 0},
+	}
+	outputs := []transaction.TxOutput{
+		{Value: 1000000000, ScriptPubKey: bobPubHex},
+		{Value: 4000000000, ScriptPubKey: miner1PubHex}, // change
+	}
+	privateKeys := map[string]string{
+		miner1PubHex: miner1PrivHex,
+	}
+	tx, err := utxoSet.CreateTransaction(inputSpecs, outputs, privateKeys)
 	if err != nil {
 		t.Fatalf("Failed to create transaction: %v", err)
 	}

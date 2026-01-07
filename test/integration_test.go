@@ -317,7 +317,53 @@ func TestIntegration_TransactionFlow(t *testing.T) {
 
 	// Create a transaction using miner's UTXOs
 	utxoSet := miner.Blockchain.GetUTXOSet()
-	tx, err := utxoSet.CreateTransaction(minerPubHex, bobPubHex, 1000000000, minerPrivHex)
+
+	// Find UTXOs for the miner
+	minerUTXOs := utxoSet.FindUTXOsForAddress(minerPubHex)
+	if len(minerUTXOs) == 0 {
+		t.Fatal("No UTXOs found for miner")
+	}
+
+	// Prepare inputs
+	var inputSpecs []struct {
+		TxID     string
+		OutIndex int
+	}
+	totalInput := int64(0)
+	for _, utxo := range minerUTXOs {
+		inputSpecs = append(inputSpecs, struct {
+			TxID     string
+			OutIndex int
+		}{
+			TxID:     utxo.TxID,
+			OutIndex: utxo.OutIndex,
+		})
+		totalInput += utxo.Value
+		if totalInput >= 1000000000 {
+			break
+		}
+	}
+
+	// Prepare outputs
+	outputs := []transaction.TxOutput{
+		{Value: 1000000000, ScriptPubKey: bobPubHex},
+	}
+
+	// Add change output if needed
+	change := totalInput - 1000000000
+	if change > 0 {
+		outputs = append(outputs, transaction.TxOutput{
+			Value:        change,
+			ScriptPubKey: minerPubHex,
+		})
+	}
+
+	// Prepare private keys map
+	privateKeys := map[string]string{
+		minerPubHex: minerPrivHex,
+	}
+
+	tx, err := utxoSet.CreateTransaction(inputSpecs, outputs, privateKeys)
 	if err != nil {
 		t.Fatalf("Failed to create transaction: %v", err)
 	}

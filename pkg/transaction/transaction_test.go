@@ -120,8 +120,21 @@ func TestTransactionSignAndVerify(t *testing.T) {
 	coinbase := NewCoinbaseTransaction(alicePubHex, 5000000000, 0)
 	utxoSet.ProcessTransaction(coinbase)
 
-	// Create a transaction from alice to bob
-	tx, err := utxoSet.CreateTransaction(alicePubHex, bobPubHex, 1000000000, aliceKP.GetPrivateKeyHex())
+	// Create a transaction from alice to bob using new API
+	inputSpecs := []struct {
+		TxID     string
+		OutIndex int
+	}{
+		{TxID: coinbase.ID, OutIndex: 0},
+	}
+	outputs := []TxOutput{
+		{Value: 1000000000, ScriptPubKey: bobPubHex},
+		{Value: 4000000000, ScriptPubKey: alicePubHex}, // change
+	}
+	privateKeys := map[string]string{
+		alicePubHex: aliceKP.GetPrivateKeyHex(),
+	}
+	tx, err := utxoSet.CreateTransaction(inputSpecs, outputs, privateKeys)
 	if err != nil {
 		t.Fatalf("Failed to create transaction: %v", err)
 	}
@@ -278,7 +291,20 @@ func TestUTXOSetProcessTransaction(t *testing.T) {
 	}
 
 	// Create and process a transaction from alice to bob
-	tx, err := utxoSet.CreateTransaction(alicePubHex, bobPubHex, 1000000000, aliceKP.GetPrivateKeyHex())
+	inputSpecs := []struct {
+		TxID     string
+		OutIndex int
+	}{
+		{TxID: coinbase.ID, OutIndex: 0},
+	}
+	outputs := []TxOutput{
+		{Value: 1000000000, ScriptPubKey: bobPubHex},
+		{Value: 4000000000, ScriptPubKey: alicePubHex}, // change
+	}
+	privateKeys := map[string]string{
+		alicePubHex: aliceKP.GetPrivateKeyHex(),
+	}
+	tx, err := utxoSet.CreateTransaction(inputSpecs, outputs, privateKeys)
 	if err != nil {
 		t.Fatalf("Failed to create transaction: %v", err)
 	}
@@ -311,7 +337,20 @@ func TestUTXOSetValidateTransaction(t *testing.T) {
 	utxoSet.ProcessTransaction(coinbase)
 
 	// Valid transaction with correct signature
-	tx, _ := utxoSet.CreateTransaction(alicePubHex, bobPubHex, 1000000000, aliceKP.GetPrivateKeyHex())
+	inputSpecs := []struct {
+		TxID     string
+		OutIndex int
+	}{
+		{TxID: coinbase.ID, OutIndex: 0},
+	}
+	outputs := []TxOutput{
+		{Value: 1000000000, ScriptPubKey: bobPubHex},
+		{Value: 4000000000, ScriptPubKey: alicePubHex},
+	}
+	privateKeys := map[string]string{
+		alicePubHex: aliceKP.GetPrivateKeyHex(),
+	}
+	tx, _ := utxoSet.CreateTransaction(inputSpecs, outputs, privateKeys)
 	err := utxoSet.ValidateTransaction(tx)
 	if err != nil {
 		t.Errorf("Valid transaction should pass validation: %v", err)
@@ -343,7 +382,19 @@ func TestCreateTransactionInsufficientFunds(t *testing.T) {
 	utxoSet.ProcessTransaction(coinbase)
 
 	// Try to spend more than available
-	_, err := utxoSet.CreateTransaction(alicePubHex, bobPubHex, 2000000, aliceKP.GetPrivateKeyHex())
+	inputSpecs := []struct {
+		TxID     string
+		OutIndex int
+	}{
+		{TxID: coinbase.ID, OutIndex: 0},
+	}
+	outputs := []TxOutput{
+		{Value: 2000000, ScriptPubKey: bobPubHex}, // More than available
+	}
+	privateKeys := map[string]string{
+		alicePubHex: aliceKP.GetPrivateKeyHex(),
+	}
+	_, err := utxoSet.CreateTransaction(inputSpecs, outputs, privateKeys)
 	if err == nil {
 		t.Error("Should fail with insufficient funds")
 	}
@@ -369,7 +420,11 @@ func TestTransactionFee(t *testing.T) {
 		// Missing 10 BTC becomes fee
 	}
 	tx := NewUTXOTransaction(inputs, outputs)
-	tx.Sign(aliceKP.GetPrivateKeyHex())
+
+	// Sign using SignWithPrivateKeys
+	utxoOwners := map[int]string{0: alicePubHex}
+	privateKeys := map[string]string{alicePubHex: aliceKP.GetPrivateKeyHex()}
+	tx.SignWithPrivateKeys(utxoOwners, privateKeys)
 
 	fee := tx.GetFee(utxoSet)
 	// Fee should be 5000000000 - 3000000000 - 1000000000 = 1000000000
@@ -435,10 +490,16 @@ func TestTransactionString(t *testing.T) {
 	// Test regular transaction string
 	aliceKP := mustGenerateKeyPair(t)
 	bobKP := mustGenerateKeyPair(t)
+	alicePubHex := aliceKP.GetPublicKeyHex()
 	inputs := []TxInput{{TxID: "abc123", OutIndex: 0}}
 	outputs := []TxOutput{{Value: 1000000, ScriptPubKey: bobKP.GetPublicKeyHex()}}
 	tx := NewUTXOTransaction(inputs, outputs)
-	tx.Sign(aliceKP.GetPrivateKeyHex())
+
+	// Sign using SignWithPrivateKeys
+	utxoOwners := map[int]string{0: alicePubHex}
+	privateKeys := map[string]string{alicePubHex: aliceKP.GetPrivateKeyHex()}
+	tx.SignWithPrivateKeys(utxoOwners, privateKeys)
+
 	str = tx.String()
 	if str == "" {
 		t.Error("String representation should not be empty")
@@ -483,7 +544,7 @@ func TestMultiInputTransaction(t *testing.T) {
 		bobPub:   bobKP.GetPrivateKeyHex(),
 	}
 
-	tx, err := utxoSet.CreateMultiInputTransaction(inputSpecs, outputs, privateKeys)
+	tx, err := utxoSet.CreateTransaction(inputSpecs, outputs, privateKeys)
 	if err != nil {
 		t.Fatalf("Failed to create multi-input transaction: %v", err)
 	}
@@ -554,7 +615,7 @@ func TestMultiInputTransactionWithChange(t *testing.T) {
 		bobPub:   bobKP.GetPrivateKeyHex(),
 	}
 
-	tx, err := utxoSet.CreateMultiInputTransaction(inputSpecs, outputs, privateKeys)
+	tx, err := utxoSet.CreateTransaction(inputSpecs, outputs, privateKeys)
 	if err != nil {
 		t.Fatalf("Failed to create transaction: %v", err)
 	}
@@ -787,7 +848,7 @@ func TestThreePartyTransaction(t *testing.T) {
 		charliePub: charlieKP.GetPrivateKeyHex(),
 	}
 
-	tx, err := utxoSet.CreateMultiInputTransaction(inputSpecs, outputs, privateKeys)
+	tx, err := utxoSet.CreateTransaction(inputSpecs, outputs, privateKeys)
 	if err != nil {
 		t.Fatalf("Failed to create 3-party transaction: %v", err)
 	}

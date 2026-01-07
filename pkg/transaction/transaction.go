@@ -269,41 +269,6 @@ func (tx *Transaction) SignWithPrivateKeys(utxoOwners map[int]string, privateKey
 	return nil
 }
 
-// Sign signs all inputs with a single private key (for single-owner transactions)
-func (tx *Transaction) Sign(privateKeyHex string) error {
-	if tx.IsCoinbase() {
-		return nil
-	}
-
-	dataToSign := tx.GetDataToSign()
-	signature, err := SignECDSA(dataToSign, privateKeyHex)
-	if err != nil {
-		return fmt.Errorf("failed to sign: %v", err)
-	}
-
-	for i := range tx.Inputs {
-		tx.Inputs[i].ScriptSig = signature
-	}
-
-	tx.ID = tx.CalculateHash()
-	return nil
-}
-
-// SignInput signs a specific input with a private key
-func (tx *Transaction) SignInput(index int, privateKeyHex string) error {
-	if index < 0 || index >= len(tx.Inputs) {
-		return fmt.Errorf("invalid input index: %d", index)
-	}
-
-	dataToSign := tx.GetDataToSign()
-	signature, err := SignECDSA(dataToSign, privateKeyHex)
-	if err != nil {
-		return fmt.Errorf("failed to sign input %d: %v", index, err)
-	}
-	tx.Inputs[index].ScriptSig = signature
-	return nil
-}
-
 // Verify verifies the transaction's basic structural validity
 // Note: Full signature verification requires access to the UTXO set
 func (tx *Transaction) Verify() bool {
@@ -589,60 +554,12 @@ func (us *UTXOSet) Copy() *UTXOSet {
 	return newSet
 }
 
-// CreateTransaction creates a transaction from one address to another
-// Automatically selects UTXOs and creates change output
-// privateKeyHex is the hex-encoded ECDSA private key
-func (us *UTXOSet) CreateTransaction(from, to string, amount int64, privateKeyHex string) (*Transaction, error) {
-	utxos := us.FindUTXOsForAddress(from)
-
-	var selectedUTXOs []*UTXO
-	var totalInput int64
-
-	// Select UTXOs until we have enough
-	for _, utxo := range utxos {
-		selectedUTXOs = append(selectedUTXOs, utxo)
-		totalInput += utxo.Value
-		if totalInput >= amount {
-			break
-		}
-	}
-
-	if totalInput < amount {
-		return nil, fmt.Errorf("insufficient balance: have %d, need %d", totalInput, amount)
-	}
-
-	// Create inputs
-	var inputs []TxInput
-	for _, utxo := range selectedUTXOs {
-		inputs = append(inputs, TxInput{
-			TxID:     utxo.TxID,
-			OutIndex: utxo.OutIndex,
-		})
-	}
-
-	// Create outputs
-	outputs := []TxOutput{
-		{Value: amount, ScriptPubKey: to},
-	}
-
-	// Create change output if needed
-	change := totalInput - amount
-	if change > 0 {
-		outputs = append(outputs, TxOutput{Value: change, ScriptPubKey: from})
-	}
-
-	tx := NewUTXOTransaction(inputs, outputs)
-	if err := tx.Sign(privateKeyHex); err != nil {
-		return nil, fmt.Errorf("failed to sign transaction: %v", err)
-	}
-
-	return tx, nil
-}
-
-// CreateMultiInputTransaction creates a transaction with inputs from multiple owners
-// inputOwners maps input index -> owner public key
-// privateKeys maps owner public key -> private key
-func (us *UTXOSet) CreateMultiInputTransaction(
+// CreateTransaction creates a transaction with inputs from one or multiple owners
+// inputSpecs: list of UTXOs to spend (txID and output index)
+// outputs: list of transaction outputs (recipients and amounts)
+// privateKeys: map of public key hex -> private key hex for signing
+// This function automatically finds UTXO owners and signs with the provided private keys
+func (us *UTXOSet) CreateTransaction(
 	inputSpecs []struct {
 		TxID     string
 		OutIndex int
@@ -653,6 +570,7 @@ func (us *UTXOSet) CreateMultiInputTransaction(
 	// Create inputs and collect owners
 	var inputs []TxInput
 	utxoOwners := make(map[int]string)
+	var totalInput int64
 
 	for i, spec := range inputSpecs {
 		utxo := us.FindUTXO(spec.TxID, spec.OutIndex)
@@ -665,6 +583,7 @@ func (us *UTXOSet) CreateMultiInputTransaction(
 			OutIndex: spec.OutIndex,
 		})
 		utxoOwners[i] = utxo.ScriptPubKey
+		totalInput += utxo.Value
 	}
 
 	// Verify we have private keys for all owners
@@ -672,6 +591,17 @@ func (us *UTXOSet) CreateMultiInputTransaction(
 		if _, ok := privateKeys[owner]; !ok {
 			return nil, fmt.Errorf("missing private key for owner %s of input %d", owner, i)
 		}
+	}
+
+	// Calculate total output value
+	var totalOutput int64
+	for _, out := range outputs {
+		totalOutput += out.Value
+	}
+
+	// Verify sufficient funds
+	if totalInput < totalOutput {
+		return nil, fmt.Errorf("insufficient funds: input=%d, output=%d", totalInput, totalOutput)
 	}
 
 	tx := NewUTXOTransaction(inputs, outputs)
