@@ -21,6 +21,11 @@ var (
 	ErrDoubleSpend        = errors.New("double spend detected")
 )
 
+const (
+	// BaseSubsidy is the fixed block subsidy used for miner rewards (in satoshi)
+	BaseSubsidy int64 = 5000000000
+)
+
 // Blockchain represents the entire blockchain
 type Blockchain struct {
 	Blocks     []*block.Block
@@ -141,10 +146,22 @@ func (bc *Blockchain) ValidateBlockTransactions(newBlock *block.Block) error {
 	// Create a temporary UTXO set copy to track spent outputs within this block
 	tempUTXO := bc.UTXOSet.Copy()
 
-	for _, tx := range newBlock.Transactions {
-		// Coinbase transactions don't need UTXO validation
+	var totalFees int64
+	var coinbaseValue int64
+	coinbaseCount := 0
+
+	for i, tx := range newBlock.Transactions {
 		if tx.IsCoinbase() {
-			// Just add the new UTXOs
+			coinbaseCount++
+			if coinbaseCount > 1 {
+				return ErrInvalidTransaction
+			}
+			// Enforce coinbase placement at the start of the block
+			if i != 0 {
+				return ErrInvalidTransaction
+			}
+			coinbaseValue = tx.TotalOutputValue()
+			// Process immediately so any (optional) spends within the same block still see the outputs
 			tempUTXO.ProcessTransaction(tx)
 			continue
 		}
@@ -154,8 +171,21 @@ func (bc *Blockchain) ValidateBlockTransactions(newBlock *block.Block) error {
 			return ErrInvalidTransaction
 		}
 
+		// Accumulate fees before mutating the UTXO set
+		totalFees += tx.GetFee(tempUTXO)
+
 		// Process the transaction (remove spent, add new)
 		tempUTXO.ProcessTransaction(tx)
+	}
+
+	// Require exactly one coinbase transaction
+	if coinbaseCount != 1 {
+		return ErrInvalidTransaction
+	}
+
+	expectedReward := BaseSubsidy + totalFees
+	if coinbaseValue > expectedReward {
+		return ErrInvalidTransaction
 	}
 
 	return nil

@@ -72,7 +72,6 @@ func NewUTXOTransaction(inputs []TxInput, outputs []TxOutput) *Transaction {
 		Inputs:  inputs,
 		Outputs: outputs,
 	}
-	tx.ID = tx.CalculateHash()
 	return tx
 }
 
@@ -452,7 +451,10 @@ func (us *UTXOSet) RemoveUTXO(txID string, outIndex int) {
 // FindUTXO finds a specific UTXO
 func (us *UTXOSet) FindUTXO(txID string, outIndex int) *UTXO {
 	if us.UTXOs[txID] != nil {
-		return us.UTXOs[txID][outIndex]
+		value, ok := us.UTXOs[txID][outIndex]
+		if ok {
+			return value
+		}
 	}
 	return nil
 }

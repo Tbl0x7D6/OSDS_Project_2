@@ -199,6 +199,13 @@ func (s *RPCService) SubmitTransaction(args *TransactionArgs, reply *Transaction
 		return nil
 	}
 
+	// Reject coinbase-like transactions coming over RPC; they must be locally mined
+	if tx.IsCoinbase() {
+		reply.Success = false
+		reply.Error = "coinbase transactions cannot be submitted via RPC"
+		return nil
+	}
+
 	if !tx.Verify() {
 		reply.Success = false
 		reply.Error = "invalid transaction"
@@ -229,6 +236,13 @@ func (s *RPCService) ReceiveTransaction(args *BlockArgs, reply *TransactionReply
 	if err != nil {
 		reply.Success = false
 		reply.Error = err.Error()
+		return nil
+	}
+
+	// Reject coinbase-like transactions from peers; only locally mined coinbase is valid
+	if tx.IsCoinbase() {
+		reply.Success = false
+		reply.Error = "coinbase transactions cannot be relayed"
 		return nil
 	}
 
