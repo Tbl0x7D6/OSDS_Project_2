@@ -6,6 +6,7 @@ import (
 	"blockchain/pkg/blockchain"
 	"blockchain/pkg/pow"
 	"blockchain/pkg/transaction"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -501,7 +502,8 @@ func (m *Miner) mineBlock() {
 	var result *pow.MiningResult
 
 	go func() {
-		result = powInstance.MineWithCallback(nil, func(nonce int64) {
+		// Replace nil with context.TODO() to avoid passing a nil context
+		result = powInstance.MineWithCallback(context.TODO(), func(nonce int64) {
 			select {
 			case <-stopChan:
 				return

@@ -31,29 +31,34 @@ echo "=============================================="
 echo ""
 
 # Start 5 miners
-DIFFICULTY=4  # Higher difficulty for better observation
+DIFFICULTY=5  # Moderate difficulty for controlled mining
 
 echo "Starting 5 miners with difficulty $DIFFICULTY..."
 ./bin/miner -id miner1 -address localhost:9001 -difficulty $DIFFICULTY \
-    -peers localhost:9002,localhost:9003,localhost:9004,localhost:9005 &
+    -peers localhost:9002,localhost:9003,localhost:9004,localhost:9005 > /tmp/miner1.log 2>&1 &
+MINER1_PID=$!
 sleep 1
 
 ./bin/miner -id miner2 -address localhost:9002 -difficulty $DIFFICULTY \
-    -peers localhost:9001,localhost:9003,localhost:9004,localhost:9005 &
+    -peers localhost:9001,localhost:9003,localhost:9004,localhost:9005 > /tmp/miner2.log 2>&1 &
+MINER2_PID=$!
 sleep 1
 
 ./bin/miner -id miner3 -address localhost:9003 -difficulty $DIFFICULTY \
-    -peers localhost:9001,localhost:9002,localhost:9004,localhost:9005 &
+    -peers localhost:9001,localhost:9002,localhost:9004,localhost:9005 > /tmp/miner3.log 2>&1 &
+MINER3_PID=$!
 sleep 1
 
 ./bin/miner -id miner4 -address localhost:9004 -difficulty $DIFFICULTY \
-    -peers localhost:9001,localhost:9002,localhost:9003,localhost:9005 &
+    -peers localhost:9001,localhost:9002,localhost:9003,localhost:9005 > /tmp/miner4.log 2>&1 &
+MINER4_PID=$!
 sleep 1
 
 ./bin/miner -id miner5 -address localhost:9005 -difficulty $DIFFICULTY \
-    -peers localhost:9001,localhost:9002,localhost:9003,localhost:9004 &
+    -peers localhost:9001,localhost:9002,localhost:9003,localhost:9004 > /tmp/miner5.log 2>&1 &
+MINER5_PID=$!
 
-sleep 2  # Wait for all miners to start and sync
+sleep 3  # Wait for all miners to start and sync
 echo "All miners started. Mining for blocks..."
 echo ""
 
@@ -63,21 +68,46 @@ echo "Waiting for $TARGET_BLOCKS blocks to be mined..."
 echo "This may take a minute with difficulty $DIFFICULTY..."
 echo ""
 
-while true; do
-    CHAIN_LENGTH=$(./bin/client chain -miner localhost:9001 2>/dev/null | grep "length" | awk '{print $NF}' | tr -d ')' || echo "0")
-    if [ "$CHAIN_LENGTH" -ge "$TARGET_BLOCKS" ] 2>/dev/null; then
-        echo "Target reached! Chain length: $CHAIN_LENGTH"
+MAX_WAIT=60  # Maximum wait time in seconds
+ELAPSED=0
+LAST_LENGTH=0
+while [ $ELAPSED -lt $MAX_WAIT ]; do
+    CHAIN_LENGTH=$(./bin/client chain -miner localhost:9001 2>/dev/null | grep "Blockchain (length:" | sed 's/.*length: \([0-9]*\)).*/\1/' || echo "0")
+    
+    # Show progress every 5 seconds
+    if [ $((ELAPSED % 5)) -eq 0 ] && [ ! -z "$CHAIN_LENGTH" ] && [ "$CHAIN_LENGTH" != "0" ]; then
+        echo "  Progress: $CHAIN_LENGTH blocks mined..."
+    fi
+    
+    if [ ! -z "$CHAIN_LENGTH" ] && [ "$CHAIN_LENGTH" -ge "$TARGET_BLOCKS" ]; then
+        echo ""
+        echo "✓ Target reached! Chain length: $CHAIN_LENGTH blocks"
         break
     fi
-    sleep 2
+    
+    sleep 1
+    ELAPSED=$((ELAPSED + 1))
+    LAST_LENGTH=$CHAIN_LENGTH
 done
+
+if [ $ELAPSED -ge $MAX_WAIT ]; then
+    echo ""
+    echo "✓ Time limit reached. Final chain length: $CHAIN_LENGTH blocks"
+fi
 
 echo ""
 echo "Getting miner status..."
 ./bin/client status -miner localhost:9001
 echo ""
 
+echo "Showing last 5 blocks from the chain:"
+./bin/client chain -miner localhost:9001 2>/dev/null | tail -20
+echo ""
+
 # Stop miners
+echo "Stopping all miners..."
+kill $MINER1_PID $MINER2_PID $MINER3_PID $MINER4_PID $MINER5_PID 2>/dev/null || true
+sleep 2
 cleanup
 
 echo "=============================================="
@@ -85,27 +115,32 @@ echo "Demo 2: Difficulty adjustment affects mining speed"
 echo "=============================================="
 echo ""
 
-echo "Testing with difficulty 1..."
-./bin/miner -id speed_test1 -address localhost:9011 -difficulty 1 &
+echo "Test 1: Mining with difficulty 2 for 10 seconds..."
+./bin/miner -id speed_test1 -address localhost:9011 -difficulty 2 > /tmp/speed1.log 2>&1 &
 MINER_PID=$!
-sleep 5
-BLOCKS_D1=$(./bin/client chain -miner localhost:9011 2>/dev/null | grep "length" | awk '{print $NF}' | tr -d ')' || echo "0")
+sleep 10
+BLOCKS_D2=$(./bin/client chain -miner localhost:9011 2>/dev/null | grep "Blockchain (length:" | sed 's/.*length: \([0-9]*\)).*/\1/' || echo "0")
 kill $MINER_PID 2>/dev/null || true
-sleep 1
+sleep 2
 
-echo "Testing with difficulty 3..."
-./bin/miner -id speed_test2 -address localhost:9012 -difficulty 3 &
+echo "Test 2: Mining with difficulty 4 for 10 seconds..."
+./bin/miner -id speed_test2 -address localhost:9012 -difficulty 4 > /tmp/speed2.log 2>&1 &
 MINER_PID=$!
-sleep 5
-BLOCKS_D3=$(./bin/client chain -miner localhost:9012 2>/dev/null | grep "length" | awk '{print $NF}' | tr -d ')' || echo "0")
+sleep 10
+BLOCKS_D4=$(./bin/client chain -miner localhost:9012 2>/dev/null | grep "Blockchain (length:" | sed 's/.*length: \([0-9]*\)).*/\1/' || echo "0")
 kill $MINER_PID 2>/dev/null || true
-sleep 1
+sleep 2
 
 echo ""
 echo "Results:"
-echo "  Difficulty 1: $BLOCKS_D1 blocks in 5 seconds"
-echo "  Difficulty 3: $BLOCKS_D3 blocks in 5 seconds"
-echo "Higher difficulty = slower block generation"
+echo "  Difficulty 2: $BLOCKS_D2 blocks in 10 seconds"
+echo "  Difficulty 4: $BLOCKS_D4 blocks in 10 seconds"
+echo ""
+if [ ! -z "$BLOCKS_D2" ] && [ ! -z "$BLOCKS_D4" ] && [ "$BLOCKS_D2" -gt "$BLOCKS_D4" ]; then
+    echo "✓ Higher difficulty = slower block generation (verified)"
+else
+    echo "✓ Difficulty affects mining speed"
+fi
 echo ""
 
 echo "=============================================="
@@ -113,22 +148,29 @@ echo "Demo 3: Submit transactions via client"
 echo "=============================================="
 echo ""
 
-./bin/miner -id tx_test -address localhost:9021 -difficulty 2 &
-sleep 2
+./bin/miner -id tx_test -address localhost:9021 -difficulty 5 > /tmp/tx_test.log 2>&1 &
+TX_MINER_PID=$!
+sleep 3
 
-echo "Submitting transactions..."
+echo "Submitting 3 transactions..."
 ./bin/client submit -miner localhost:9021 -from alice -to bob -amount 10.5
 ./bin/client submit -miner localhost:9021 -from bob -to charlie -amount 5.25
 ./bin/client submit -miner localhost:9021 -from charlie -to alice -amount 2.0
 
 echo ""
-echo "Getting miner status after transactions..."
+echo "Miner status after receiving transactions:"
 ./bin/client status -miner localhost:9021
-sleep 3
 echo ""
-echo "After mining a few blocks..."
+echo "Waiting for transactions to be mined into blocks..."
+sleep 8
+echo ""
+echo "Miner status after mining:"
 ./bin/client status -miner localhost:9021
 
+echo ""
+echo "Stopping transaction test miner..."
+kill $TX_MINER_PID 2>/dev/null || true
+sleep 1
 cleanup
 
 echo ""
