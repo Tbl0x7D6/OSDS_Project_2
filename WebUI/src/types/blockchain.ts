@@ -75,6 +75,23 @@ export interface ErrorOutput {
   error: string;
 }
 
+export interface TransferInput {
+  from: string;
+  privateKey: string;
+  inputs: string; // Format: "txid:outindex,txid:outindex,..."
+  to: string;
+  amount: number; // in satoshi
+  changeTo?: string;
+  miner?: string;
+}
+
+export interface TransferOutput {
+  success: boolean;
+  txid: string;
+  message?: string;
+  error?: string;
+}
+
 export const SATOSHI_PER_BTC = 100_000_000;
 
 export function satoshiToBTC(satoshi: number): number {

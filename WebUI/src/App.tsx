@@ -15,11 +15,13 @@ import {
   FiPackage,
   FiSettings,
   FiActivity,
+  FiSend,
 } from 'react-icons/fi';
 import { BlockchainDashboard } from './components/BlockchainDashboard';
 import { WalletManager } from './components/WalletManager';
 import { BlockExplorer } from './components/BlockExplorer';
 import { Settings } from './components/Settings';
+import { TransferManager } from './components/TransferManager';
 import { ColorModeButton } from './components/ui/color-mode';
 
 function App() {
@@ -88,6 +90,12 @@ function App() {
                 <Text>钱包管理</Text>
               </HStack>
             </Tabs.Trigger>
+            <Tabs.Trigger value="transfer">
+              <HStack gap={2}>
+                <FiSend />
+                <Text>转账</Text>
+              </HStack>
+            </Tabs.Trigger>
             <Tabs.Trigger value="explorer">
               <HStack gap={2}>
                 <FiPackage />
@@ -108,6 +116,10 @@ function App() {
 
           <Tabs.Content value="wallet">
             <WalletManager />
+          </Tabs.Content>
+
+          <Tabs.Content value="transfer">
+            <TransferManager />
           </Tabs.Content>
 
           <Tabs.Content value="explorer">

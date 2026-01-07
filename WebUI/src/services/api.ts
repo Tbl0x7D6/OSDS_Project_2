@@ -5,6 +5,8 @@ import type {
   BlockchainStatusOutput,
   WalletStatusOutput,
   ErrorOutput,
+  TransferInput,
+  TransferOutput,
 } from '../types/blockchain';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
@@ -57,6 +59,26 @@ export class BlockchainAPI {
       const response = await fetch(
         `${API_BASE_URL}/wallet/${address}/balance?${params}`
       );
+      return await response.json();
+    } catch (error: unknown) {
+      return { error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  /**
+   * Send transfer transaction
+   */
+  static async sendTransfer(
+    transferData: TransferInput
+  ): Promise<TransferOutput | ErrorOutput> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/transaction/transfer`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(transferData),
+      });
       return await response.json();
     } catch (error: unknown) {
       return { error: error instanceof Error ? error.message : 'Unknown error' };

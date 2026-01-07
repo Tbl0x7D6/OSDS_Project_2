@@ -109,6 +109,43 @@ app.get('/api/wallet/:address/balance', async (req, res) => {
 });
 
 /**
+ * POST /api/transaction/transfer
+ * Send a transfer transaction
+ * Body: { from, privateKey, inputs, to, amount, changeTo, miner }
+ * inputs format: "txid:outindex,txid:outindex,..."
+ */
+app.post('/api/transaction/transfer', async (req, res) => {
+  try {
+    const { from, privateKey, inputs, to, amount, changeTo, miner } = req.body;
+    
+    if (!from || !privateKey || !inputs || !to || !amount) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: from, privateKey, inputs, to, amount' 
+      });
+    }
+    
+    const minerAddr = miner || DEFAULT_MINER;
+    const changeAddr = changeTo || '';
+    
+    let cmd = `${CLI_PATH} transfer -from "${from}" -privkey "${privateKey}" -inputs "${inputs}" -to "${to}" -amount ${amount} -miner ${minerAddr}`;
+    
+    if (changeAddr) {
+      cmd += ` -changeto "${changeAddr}"`;
+    }
+    
+    const result = await executeCLI(cmd);
+    
+    if (result.error) {
+      return res.status(500).json(result);
+    }
+    
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * GET /api/health
  * Health check
  */
@@ -125,6 +162,7 @@ app.listen(PORT, () => {
   console.log(`  POST   http://localhost:${PORT}/api/wallet/generate`);
   console.log(`  GET    http://localhost:${PORT}/api/blockchain/status`);
   console.log(`  GET    http://localhost:${PORT}/api/wallet/:address/balance`);
+  console.log(`  POST   http://localhost:${PORT}/api/transaction/transfer`);
   console.log(`  GET    http://localhost:${PORT}/api/health`);
   console.log('');
   console.log('Using CLI path:', CLI_PATH);
