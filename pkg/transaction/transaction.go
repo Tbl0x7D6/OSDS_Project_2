@@ -193,7 +193,7 @@ func (kp *KeyPair) GetPrivateKeyHex() string {
 }
 
 // SignECDSA signs data using ECDSA and returns the signature as hex string
-// The signature format is: r || s (each 32 bytes for P-256)
+// The signature is ASN.1 DER encoded
 func SignECDSA(dataToSign string, privateKeyHex string) (string, error) {
 	privateKey, err := HexToPrivateKey(privateKeyHex)
 	if err != nil {
@@ -203,25 +203,17 @@ func SignECDSA(dataToSign string, privateKeyHex string) (string, error) {
 	// Hash the data first
 	hash := sha256.Sum256([]byte(dataToSign))
 
-	// Sign the hash
-	r, s, err := ecdsa.Sign(rand.Reader, privateKey, hash[:])
+	// Sign the hash using ASN.1 DER encoding
+	signature, err := ecdsa.SignASN1(rand.Reader, privateKey, hash[:])
 	if err != nil {
 		return "", fmt.Errorf("failed to sign: %v", err)
 	}
-
-	// Encode r and s as fixed-size bytes (32 bytes each for P-256)
-	rBytes := r.Bytes()
-	sBytes := s.Bytes()
-
-	// Pad to 32 bytes each
-	signature := make([]byte, 64)
-	copy(signature[32-len(rBytes):32], rBytes)
-	copy(signature[64-len(sBytes):64], sBytes)
 
 	return hex.EncodeToString(signature), nil
 }
 
 // VerifyECDSA verifies an ECDSA signature
+// The signature is expected to be ASN.1 DER encoded
 func VerifyECDSA(dataToSign, signatureHex, publicKeyHex string) bool {
 	publicKey, err := HexToPublicKey(publicKeyHex)
 	if err != nil {
@@ -229,19 +221,15 @@ func VerifyECDSA(dataToSign, signatureHex, publicKeyHex string) bool {
 	}
 
 	signatureBytes, err := hex.DecodeString(signatureHex)
-	if err != nil || len(signatureBytes) != 64 {
+	if err != nil {
 		return false
 	}
-
-	// Extract r and s from signature
-	r := new(big.Int).SetBytes(signatureBytes[:32])
-	s := new(big.Int).SetBytes(signatureBytes[32:])
 
 	// Hash the data
 	hash := sha256.Sum256([]byte(dataToSign))
 
-	// Verify the signature
-	return ecdsa.Verify(publicKey, hash[:], r, s)
+	// Verify the ASN.1 DER encoded signature
+	return ecdsa.VerifyASN1(publicKey, hash[:], signatureBytes)
 }
 
 // SignWithPrivateKeys signs the transaction with multiple private keys (ECDSA)
