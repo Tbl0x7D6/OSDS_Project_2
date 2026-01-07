@@ -273,7 +273,22 @@ func (tx *Transaction) SignWithPrivateKeys(utxoOwners map[int]string, privateKey
 func (tx *Transaction) Verify() bool {
 	// Coinbase transactions have special rules
 	if tx.IsCoinbase() {
-		return tx.verifyCoinbase()
+		if len(tx.Inputs) != 1 {
+			return false
+		}
+		if len(tx.Outputs) == 0 {
+			return false
+		}
+		// Coinbase output must have positive value
+		for _, out := range tx.Outputs {
+			if out.Value < 0 {
+				return false
+			}
+			if out.ScriptPubKey == "" {
+				return false
+			}
+		}
+		return true
 	}
 
 	// Must have at least one input and one output
@@ -324,26 +339,6 @@ func (tx *Transaction) VerifySignatures(utxoPublicKeys map[int]string) bool {
 		}
 	}
 
-	return true
-}
-
-// verifyCoinbase verifies a coinbase transaction
-func (tx *Transaction) verifyCoinbase() bool {
-	if len(tx.Inputs) != 1 {
-		return false
-	}
-	if len(tx.Outputs) == 0 {
-		return false
-	}
-	// Coinbase output must have positive value
-	for _, out := range tx.Outputs {
-		if out.Value < 0 {
-			return false
-		}
-		if out.ScriptPubKey == "" {
-			return false
-		}
-	}
 	return true
 }
 
