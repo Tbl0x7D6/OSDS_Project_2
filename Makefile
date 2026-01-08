@@ -25,7 +25,7 @@ DEPLOY_TS := $(shell date +%Y%m%d_%H%M%S)
 DEPLOY_LOG := $(LOG_DIR)/deploy_$(DEPLOY_TS).log
 WALLET_DIR := $(LOG_DIR)/wallets
 
-.PHONY: compile stop_miner deploy_miner download_log
+.PHONY: compile stop_miner deploy_miner download_log environment
 
 compile: $(MINER_BIN) $(CLIENT_BIN) $(FAKEMINER_BIN)
 	@echo "Binaries are ready in $(BIN_DIR)/"
@@ -94,3 +94,19 @@ download_log:
 		echo " - $$ip"; \
 		$(SCP) $(SCP_OPTS) root@$$ip:$(REMOTE_DIR)/miner.log $(DOWNLOAD_DIR)/miner_$$ip.log >/dev/null 2>&1 || echo "   (skip) no log"; \
 	done
+
+
+environment:
+	@echo "Setting up Node.js environment with nvm and pnpm..."
+	@bash -lc 'set -euo pipefail; \
+		apt update; \
+		apt install -y curl; \
+		if [ ! -d "$${HOME}/.nvm" ]; then \
+			curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash; \
+		fi; \
+		. "$${HOME}/.nvm/nvm.sh"; \
+		nvm install 24; \
+		node -v; \
+		corepack enable pnpm; \
+		pnpm -v; \
+		echo "Environment setup complete."'
