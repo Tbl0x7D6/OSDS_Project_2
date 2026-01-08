@@ -180,4 +180,199 @@ func TestBlockClone(t *testing.T) {
 	if block.Nonce == clone.Nonce {
 		t.Error("Clone should be independent of original")
 	}
+
+	// MerkleRoot should be preserved
+	if clone.MerkleRoot != block.MerkleRoot {
+		t.Error("Clone should preserve MerkleRoot")
+	}
+}
+
+func TestMerkleRootCalculation(t *testing.T) {
+	coinbase := transaction.NewCoinbaseTransaction("miner1", 5000000000, 1)
+	txs := []*transaction.Transaction{coinbase}
+
+	block := NewBlock(1, txs, "prev_hash", 2, "miner1")
+
+	// MerkleRoot should be set
+	if block.MerkleRoot == "" {
+		t.Error("MerkleRoot should be calculated on block creation")
+	}
+
+	// MerkleRoot should be consistent
+	root1 := block.CalculateMerkleRoot()
+	root2 := block.CalculateMerkleRoot()
+	if root1 != root2 {
+		t.Error("MerkleRoot calculation should be deterministic")
+	}
+}
+
+func TestHasValidMerkleRoot(t *testing.T) {
+	coinbase := transaction.NewCoinbaseTransaction("miner1", 5000000000, 1)
+	txs := []*transaction.Transaction{coinbase}
+
+	block := NewBlock(1, txs, "prev_hash", 2, "miner1")
+
+	if !block.HasValidMerkleRoot() {
+		t.Error("Block should have valid merkle root")
+	}
+
+	// Tamper with merkle root
+	block.MerkleRoot = "tampered_root"
+	if block.HasValidMerkleRoot() {
+		t.Error("Tampered merkle root should be invalid")
+	}
+}
+
+func TestMerkleRootMultipleTransactions(t *testing.T) {
+	coinbase := transaction.NewCoinbaseTransaction("miner1", 5000000000, 1)
+	tx1 := transaction.NewCoinbaseTransaction("addr1", 1000, 1)
+	tx2 := transaction.NewCoinbaseTransaction("addr2", 2000, 1)
+
+	txs := []*transaction.Transaction{coinbase, tx1, tx2}
+	block := NewBlock(1, txs, "prev_hash", 2, "miner1")
+
+	if block.MerkleRoot == "" {
+		t.Error("MerkleRoot should be calculated for multiple transactions")
+	}
+
+	if !block.HasValidMerkleRoot() {
+		t.Error("Block should have valid merkle root with multiple transactions")
+	}
+}
+
+func TestGetMerkleTree(t *testing.T) {
+	coinbase := transaction.NewCoinbaseTransaction("miner1", 5000000000, 1)
+	tx1 := transaction.NewCoinbaseTransaction("addr1", 1000, 1)
+
+	txs := []*transaction.Transaction{coinbase, tx1}
+	block := NewBlock(1, txs, "prev_hash", 2, "miner1")
+
+	tree, err := block.GetMerkleTree()
+	if err != nil {
+		t.Fatalf("Failed to get merkle tree: %v", err)
+	}
+
+	if tree.GetRootHash() != block.MerkleRoot {
+		t.Error("MerkleTree root should match block's MerkleRoot")
+	}
+}
+
+func TestGenerateSPVProof(t *testing.T) {
+	coinbase := transaction.NewCoinbaseTransaction("miner1", 5000000000, 1)
+	tx1 := transaction.NewCoinbaseTransaction("addr1", 1000, 1)
+	tx2 := transaction.NewCoinbaseTransaction("addr2", 2000, 1)
+
+	txs := []*transaction.Transaction{coinbase, tx1, tx2}
+	block := NewBlock(1, txs, "prev_hash", 2, "miner1")
+
+	// Generate proof for tx1
+	proof, err := block.GenerateSPVProof(tx1.ID)
+	if err != nil {
+		t.Fatalf("Failed to generate SPV proof: %v", err)
+	}
+
+	if proof.TxHash != tx1.ID {
+		t.Error("Proof should be for the correct transaction")
+	}
+
+	if proof.MerkleRoot != block.MerkleRoot {
+		t.Error("Proof merkle root should match block's merkle root")
+	}
+}
+
+func TestVerifyTransactionInBlock(t *testing.T) {
+	coinbase := transaction.NewCoinbaseTransaction("miner1", 5000000000, 1)
+	tx1 := transaction.NewCoinbaseTransaction("addr1", 1000, 1)
+	tx2 := transaction.NewCoinbaseTransaction("addr2", 2000, 1)
+	tx3 := transaction.NewCoinbaseTransaction("addr3", 3000, 1)
+
+	txs := []*transaction.Transaction{coinbase, tx1, tx2, tx3}
+	block := NewBlock(1, txs, "prev_hash", 2, "miner1")
+
+	// Verify each transaction is in the block
+	for _, tx := range txs {
+		if !block.VerifyTransactionInBlock(tx.ID) {
+			t.Errorf("Transaction %s should be verified in block", tx.ID[:8])
+		}
+	}
+
+	// Verify non-existent transaction
+	fakeTx := transaction.NewCoinbaseTransaction("fake", 9999, 99)
+	if block.VerifyTransactionInBlock(fakeTx.ID) {
+		t.Error("Non-existent transaction should not be verified")
+	}
+}
+
+func TestSPVProofVerification(t *testing.T) {
+	// Create a block with several transactions
+	var txs []*transaction.Transaction
+	txs = append(txs, transaction.NewCoinbaseTransaction("miner1", 5000000000, 1))
+	for i := 0; i < 7; i++ {
+		txs = append(txs, transaction.NewCoinbaseTransaction(
+			"addr"+string(rune('a'+i)), int64(i*1000), int64(i)))
+	}
+
+	block := NewBlock(1, txs, "prev_hash", 2, "miner1")
+
+	// Test SPV for each transaction
+	for _, tx := range txs {
+		proof, err := block.GenerateSPVProof(tx.ID)
+		if err != nil {
+			t.Errorf("Failed to generate proof for tx %s: %v", tx.ID[:8], err)
+			continue
+		}
+
+		// Verify using SPV
+		if !block.VerifyTransactionInBlock(tx.ID) {
+			t.Errorf("SPV verification failed for tx %s", tx.ID[:8])
+		}
+
+		// Verify proof details
+		if proof.MerkleRoot != block.MerkleRoot {
+			t.Errorf("Proof root mismatch for tx %s", tx.ID[:8])
+		}
+	}
+}
+
+func TestEmptyBlockMerkleRoot(t *testing.T) {
+	// Create block with no transactions
+	block := &Block{
+		Index:        1,
+		Timestamp:    12345,
+		Transactions: []*transaction.Transaction{},
+		PrevHash:     "prev",
+		Difficulty:   2,
+		MinerID:      "miner",
+	}
+
+	// Empty block should have empty merkle root
+	root := block.CalculateMerkleRoot()
+	if root != "" {
+		t.Error("Empty block should have empty merkle root")
+	}
+}
+
+func TestMerkleRootInHash(t *testing.T) {
+	coinbase := transaction.NewCoinbaseTransaction("miner1", 5000000000, 1)
+	txs := []*transaction.Transaction{coinbase}
+
+	block := NewBlock(1, txs, "prev_hash", 2, "miner1")
+	hash1 := block.CalculateHash()
+
+	// Change merkle root (simulate tampering)
+	originalRoot := block.MerkleRoot
+	block.MerkleRoot = "tampered"
+	hash2 := block.CalculateHash()
+
+	// Hashes should be different
+	if hash1 == hash2 {
+		t.Error("Changing merkle root should change block hash")
+	}
+
+	// Restore and verify
+	block.MerkleRoot = originalRoot
+	hash3 := block.CalculateHash()
+	if hash1 != hash3 {
+		t.Error("Restoring merkle root should restore original hash")
+	}
 }

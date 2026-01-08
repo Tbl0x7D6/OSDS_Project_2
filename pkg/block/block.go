@@ -2,6 +2,7 @@
 package block
 
 import (
+	"blockchain/pkg/merkle"
 	"blockchain/pkg/transaction"
 	"crypto/sha256"
 	"encoding/hex"
@@ -15,6 +16,7 @@ type Block struct {
 	Index        int64                      `json:"index"`
 	Timestamp    int64                      `json:"timestamp"`
 	Transactions []*transaction.Transaction `json:"transactions"`
+	MerkleRoot   string                     `json:"merkle_root"`
 	PrevHash     string                     `json:"prev_hash"`
 	Hash         string                     `json:"hash"`
 	Nonce        int64                      `json:"nonce"`
@@ -33,6 +35,8 @@ func NewBlock(index int64, transactions []*transaction.Transaction, prevHash str
 		Difficulty:   difficulty,
 		MinerID:      minerID,
 	}
+	// Calculate Merkle Root
+	block.MerkleRoot = block.CalculateMerkleRoot()
 	return block
 }
 
@@ -49,20 +53,34 @@ func NewGenesisBlock(difficulty int) *Block {
 		Difficulty:   difficulty,
 		MinerID:      "genesis",
 	}
+	block.MerkleRoot = block.CalculateMerkleRoot()
 	block.Hash = block.CalculateHash()
 	return block
 }
 
-// CalculateHash computes the SHA256 hash of the block
-func (b *Block) CalculateHash() string {
-	// Serialize transactions
-	txData := ""
-	for _, tx := range b.Transactions {
-		txData += tx.ID
+// CalculateMerkleRoot computes the Merkle root of all transactions
+func (b *Block) CalculateMerkleRoot() string {
+	if len(b.Transactions) == 0 {
+		return ""
 	}
 
+	txHashes := make([]string, len(b.Transactions))
+	for i, tx := range b.Transactions {
+		txHashes[i] = tx.ID
+	}
+
+	root, err := merkle.ComputeMerkleRoot(txHashes)
+	if err != nil {
+		return ""
+	}
+	return root
+}
+
+// CalculateHash computes the SHA256 hash of the block
+func (b *Block) CalculateHash() string {
+	// Use MerkleRoot instead of serializing all transactions
 	data := fmt.Sprintf("%d%d%s%s%d%d%s",
-		b.Index, b.Timestamp, txData, b.PrevHash, b.Nonce, b.Difficulty, b.MinerID)
+		b.Index, b.Timestamp, b.MerkleRoot, b.PrevHash, b.Nonce, b.Difficulty, b.MinerID)
 	hash := sha256.Sum256([]byte(data))
 	return hex.EncodeToString(hash[:])
 }
@@ -130,6 +148,7 @@ func (b *Block) Clone() *Block {
 		Index:        b.Index,
 		Timestamp:    b.Timestamp,
 		Transactions: transactions,
+		MerkleRoot:   b.MerkleRoot,
 		PrevHash:     b.PrevHash,
 		Hash:         b.Hash,
 		Nonce:        b.Nonce,
@@ -142,4 +161,43 @@ func (b *Block) Clone() *Block {
 func (b *Block) String() string {
 	return fmt.Sprintf("Block{Index: %d, Hash: %s..., PrevHash: %s..., TxCount: %d, Nonce: %d, Miner: %s}",
 		b.Index, b.Hash[:8], b.PrevHash[:8], len(b.Transactions), b.Nonce, b.MinerID)
+}
+
+// HasValidMerkleRoot checks if the block's Merkle root is correct
+func (b *Block) HasValidMerkleRoot() bool {
+	return b.MerkleRoot == b.CalculateMerkleRoot()
+}
+
+// GetMerkleTree builds and returns the Merkle Tree for this block
+func (b *Block) GetMerkleTree() (*merkle.MerkleTree, error) {
+	if len(b.Transactions) == 0 {
+		return nil, merkle.ErrEmptyTree
+	}
+
+	txHashes := make([]string, len(b.Transactions))
+	for i, tx := range b.Transactions {
+		txHashes[i] = tx.ID
+	}
+
+	return merkle.NewMerkleTreeFromHashes(txHashes)
+}
+
+// GenerateSPVProof generates a SPV proof for a transaction in this block
+func (b *Block) GenerateSPVProof(txID string) (*merkle.MerkleProof, error) {
+	tree, err := b.GetMerkleTree()
+	if err != nil {
+		return nil, err
+	}
+
+	return tree.GenerateProof(txID)
+}
+
+// VerifyTransactionInBlock verifies that a transaction is included in this block using SPV
+func (b *Block) VerifyTransactionInBlock(txID string) bool {
+	proof, err := b.GenerateSPVProof(txID)
+	if err != nil {
+		return false
+	}
+
+	return merkle.VerifyProof(proof)
 }
