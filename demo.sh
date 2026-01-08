@@ -75,11 +75,13 @@ wait_for_blocks() {
 }
 
 print_chain_tail() {
-    local miner=$1
+    local miner_input=$1
+    local miner=${miner_input%% *}
+    miner=${miner%%,*}
     local payload length difficulty
-    payload=$($BIN_CLIENT blockchain -miner "$miner" -detail 2>/dev/null | tr -d '\n' || true)
-    length=$(echo "$payload" | sed -n 's/.*"chain_length"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p')
-    difficulty=$(echo "$payload" | sed -n 's/.*"difficulty"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p')
+    payload=$($BIN_CLIENT blockchain -miner "$miner" 2>/dev/null | tr -d '\n' || true)
+    length=$(echo "$payload" | grep -o "\"chain_length\"[[:space:]]*:[[:space:]]*[0-9][0-9]*" | head -n1 | sed 's/[^0-9]//g')
+    difficulty=$(echo "$payload" | grep -o "\"difficulty\"[[:space:]]*:[[:space:]]*[0-9][0-9]*" | head -n1 | sed 's/[^0-9]//g')
     echo "Chain length: ${length:-0}, difficulty: ${difficulty:-0}"
     local lines
     lines=$(echo "$payload" | tr '{' '\n' | grep -E '"index"|"hash"|"prev_hash"|"miner_id"' 2>/dev/null || true)
@@ -185,7 +187,7 @@ echo
 # Demo 1: Run N miners and build a 100+ block chain
 log_section "Demo 1: N miners generate 100+ blocks"
 MINER_COUNT=${MINER_COUNT:-5}
-DEMO1_DIFFICULTY=${DEMO1_DIFFICULTY:-3}
+DEMO1_DIFFICULTY=${DEMO1_DIFFICULTY:-17}
 TARGET_BLOCKS=100
 start_miner_group "miner" "$MINER_COUNT" 9101 "$DEMO1_DIFFICULTY" true DEMO1_ADDRS
 sleep 2
@@ -197,14 +199,21 @@ stop_started_processes
 # Demo 2: Higher difficulty slows block production
 log_section "Demo 2: Difficulty affects block speed"
 SPEED_COUNT=${SPEED_COUNT:-3}
-LOW_DIFF=${LOW_DIFF:-2}
-HIGH_DIFF=${HIGH_DIFF:-4}
+LOW_DIFF=${LOW_DIFF:-8}
+MIDDLE_DIFF=${MIDDLE_DIFF:-12}
+HIGH_DIFF=${HIGH_DIFF:-16}
 RUN_SECONDS=${RUN_SECONDS:-10}
 
 start_miner_group "spdL" "$SPEED_COUNT" 9201 "$LOW_DIFF" true SPEED_ADDRS
 sleep "$RUN_SECONDS"
 LEN_LOW=$(get_chain_value "${SPEED_ADDRS[0]}" "chain_length" 0)
 BLOCKS_LOW=$((LEN_LOW - 1))
+stop_started_processes
+
+start_miner_group "spdM" "$SPEED_COUNT" 9251 "$MIDDLE_DIFF" true SPEED2_ADDRS
+sleep "$RUN_SECONDS"
+LEN_MID=$(get_chain_value "${SPEED2_ADDRS[0]}" "chain_length" 0)
+BLOCKS_MID=$((LEN_MID - 1))
 stop_started_processes
 
 start_miner_group "spdH" "$SPEED_COUNT" 9301 "$HIGH_DIFF" true SPEED2_ADDRS
@@ -214,52 +223,78 @@ BLOCKS_HIGH=$((LEN_HIGH - 1))
 stop_started_processes
 
 echo "  Blocks in ${RUN_SECONDS}s @ difficulty $LOW_DIFF: $BLOCKS_LOW"
+echo "  Blocks in ${RUN_SECONDS}s @ difficulty $MIDDLE_DIFF: $BLOCKS_MID"
 echo "  Blocks in ${RUN_SECONDS}s @ difficulty $HIGH_DIFF: $BLOCKS_HIGH"
 echo
 
 # Demo 3: Corrupted blocks (invalid hash) are rejected
 log_section "Demo 3: Corrupted block rejection"
 MAL_ADDR="localhost:9403"
-start_miner_group "goodC" 2 9401 3 false CORR_ADDRS "$MAL_ADDR"
+start_miner_group "goodC" 2 9401 12 false CORR_ADDRS "$MAL_ADDR"
 CORR_PEERS=$(comma_join "${CORR_ADDRS[@]}")
 start_fakeminer_node "corruptor" "$MAL_ADDR" 1 "$CORR_PEERS" "invalid_hash"
 sleep 10
 LEN_CORR=$(get_chain_value "${CORR_ADDRS[0]}" "chain_length" 0)
 echo "  Honest chain length (should remain at genesis-level): $LEN_CORR"
-show_rejection_logs "$LOG_DIR/goodC1.log" "Honest miner rejection log"
+# show_rejection_logs "$LOG_DIR/goodC1.log" "Honest miner rejection log"
 stop_started_processes
 echo
 
 # Demo 4: Lying miner with invalid PoW is rejected
 log_section "Demo 4: Invalid PoW rejection"
 MAL_POW_ADDR="localhost:9453"
-start_miner_group "goodP" 2 9451 3 false POW_ADDRS "$MAL_POW_ADDR"
+start_miner_group "goodP" 2 9451 12 false POW_ADDRS "$MAL_POW_ADDR"
 POW_PEERS=$(comma_join "${POW_ADDRS[@]}")
 start_fakeminer_node "liar" "$MAL_POW_ADDR" 1 "$POW_PEERS" "invalid_pow"
 sleep 10
 LEN_POW=$(get_chain_value "${POW_ADDRS[0]}" "chain_length" 0)
 echo "  Honest chain length (invalid PoW blocks ignored): $LEN_POW"
-show_rejection_logs "$LOG_DIR/goodP1.log" "Honest miner rejection log"
+# show_rejection_logs "$LOG_DIR/goodP1.log" "Honest miner rejection log"
 stop_started_processes
 echo
 
-# Demo 5: Fork resolution via longest chain rule
-log_section "Demo 5: Fork resolved by longest chain"
-BRIDGE_ADDR="localhost:9620"
-start_miner_group "forkA" 2 9601 2 true FORKA_ADDRS "$BRIDGE_ADDR"
-start_miner_group "forkB" 2 9651 2 true FORKB_ADDRS "$BRIDGE_ADDR"
-sleep 8
-LEN_A_PRE=$(get_chain_value "${FORKA_ADDRS[0]}" "chain_length" 0)
-LEN_B_PRE=$(get_chain_value "${FORKB_ADDRS[0]}" "chain_length" 0)
-echo "  Pre-merge lengths -> group A: $LEN_A_PRE, group B: $LEN_B_PRE"
+# Demo 5: Partition then longest-chain merge
+log_section "Demo 5: Partition then longest-chain merge"
+PART_DIFFICULTY=${PART_DIFFICULTY:-14}
+PART_GROUP_SIZE=3
+PARTITION_TIME=${PARTITION_TIME:-5}
+MERGE_SETTLE=${MERGE_SETTLE:-6}
 
+# Start two groups that both peer through a temporary bridge miner so the
+# initial chain is shared across all six miners.
+BRIDGE_ADDR="localhost:9720"
+start_miner_group "partA" "$PART_GROUP_SIZE" 9601 "$PART_DIFFICULTY" true FORKA_ADDRS "$BRIDGE_ADDR"
+start_miner_group "partB" "$PART_GROUP_SIZE" 9651 "$PART_DIFFICULTY" true FORKB_ADDRS "$BRIDGE_ADDR"
 BRIDGE_PEERS=$(comma_join "${FORKA_ADDRS[@]}" "${FORKB_ADDRS[@]}")
-start_miner_group "bridge" 1 9620 2 true BRIDGE_ADDRS "$BRIDGE_PEERS"
-sleep 8
-LEN_BRIDGE=$(get_chain_value "${BRIDGE_ADDRS[0]}" "chain_length" 0)
-LEN_B_POST=$(get_chain_value "${FORKB_ADDRS[0]}" "chain_length" 0)
-echo "  After reconnect -> bridge: $LEN_BRIDGE, group B adopts: $LEN_B_POST"
-show_sync_logs "$LOG_DIR/forkB1.log" "Fork group B sync log"
+
+# Capture PID index to stop/restart bridge cleanly
+BEFORE_COUNT=${#PIDS[@]}
+start_miner_group "bridge" 1 9720 "$PART_DIFFICULTY" false BRIDGE_ADDRS "$BRIDGE_PEERS"
+BRIDGE_PID=${PIDS[$BEFORE_COUNT]}
+
+echo "  All miners connected for ${PARTITION_TIME}s before partition"
+sleep "$PARTITION_TIME"
+LEN_A_SHARED=$(get_chain_value "${FORKA_ADDRS[0]}" "chain_length" 0)
+LEN_B_SHARED=$(get_chain_value "${FORKB_ADDRS[0]}" "chain_length" 0)
+echo "  Shared chain lengths -> group A: $LEN_A_SHARED, group B: $LEN_B_SHARED"
+
+echo "  Partitioning network: stopping bridge miner"
+kill "$BRIDGE_PID" 2>/dev/null || true
+sleep "$PARTITION_TIME"
+LEN_A_PART=$(get_chain_value "${FORKA_ADDRS[0]}" "chain_length" 0)
+LEN_B_PART=$(get_chain_value "${FORKB_ADDRS[0]}" "chain_length" 0)
+echo "  During partition (${PARTITION_TIME}s) -> group A: $LEN_A_PART, group B: $LEN_B_PART"
+
+echo "  Reconnecting partition: restarting bridge miner"
+BEFORE_COUNT=${#PIDS[@]}
+start_miner_group "bridge" 1 9720 "$PART_DIFFICULTY" false BRIDGE_ADDRS "$BRIDGE_PEERS"
+BRIDGE_PID=${PIDS[$BEFORE_COUNT]}
+
+sleep "$MERGE_SETTLE"
+LEN_A_MERGED=$(get_chain_value "${FORKA_ADDRS[0]}" "chain_length" 0)
+LEN_B_MERGED=$(get_chain_value "${FORKB_ADDRS[0]}" "chain_length" 0)
+echo "  After merge (+${MERGE_SETTLE}s) -> group A: $LEN_A_MERGED, group B: $LEN_B_MERGED"
+show_sync_logs "$LOG_DIR/partB1.log" "Partition group B sync log"
 print_chain_tail "${FORKB_ADDRS[0]}"
 
 stop_started_processes
