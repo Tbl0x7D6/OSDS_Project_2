@@ -18,7 +18,7 @@ The evaluator:
 From the repo root:
 
 ```bash
-python3 eval/perf.py --counts 1,3,5,7 --difficulties 3,4 --duration 10
+python3 eval/perf.py --counts 1,3,5,7 --difficulties 10,14,17,19,22 --duration 60 --progress-interval 5 --stop-between
 ```
 
 Options:
@@ -52,3 +52,19 @@ Plot details:
 ```
 logs/deploy/deploy_<timestamp>.log
 ```
+
+
+## New feature
+
+Done
+
+Added intermediate “watch” output during the measurement window in perf.py: it calls ./bin/client blockchain -miner <addr> every N seconds and overwrites a single console line (no scrolling).
+New flag: --progress-interval (default 10.0; set 0 to disable).
+What you’ll see
+
+While the test is running, it prints one line like: t=  10s chain_length=123 (+45) and keeps updating it in-place, then prints a newline at the end of the window.
+Tested
+
+Ran: python3 [perf.py](http://_vscodecontentref_/9) --counts 1 --difficulties 3 --duration 12 --progress-interval 2 --stop-between
+Confirmed the intermediate line updates and the run completes, writing outputs under logs/perf/<timestamp>/.
+If you want the progress line to include difficulty/miner count (e.g., prefix [COUNT=.. DIFF=..]), say so and I’ll add it.

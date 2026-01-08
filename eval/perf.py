@@ -21,6 +21,7 @@ import argparse
 import csv
 import json
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -149,6 +150,7 @@ def run_experiment(
     warmup_sec: float,
     ready_timeout_sec: float,
     poll_interval_sec: float,
+    progress_interval_sec: float,
 ) -> RunResult:
     if count > len(all_ips):
         raise ValueError(f"Requested COUNT={count} but only {len(all_ips)} IPs are in minerip.txt")
@@ -173,7 +175,47 @@ def run_experiment(
         timeout_sec=ready_timeout_sec,
         poll_interval_sec=poll_interval_sec,
     )
-    time.sleep(duration_sec)
+
+    # During the measurement window, optionally sample intermediate chain lengths.
+    # We overwrite a single console line to avoid noisy output.
+    addr = f"{observer_ip}:{port}"
+    if progress_interval_sec and progress_interval_sec > 0 and duration_sec > 0:
+        last_print_len = 0
+
+        def print_progress_line(msg: str) -> None:
+            nonlocal last_print_len
+            padded = msg
+            if last_print_len > len(msg):
+                padded = msg + (" " * (last_print_len - len(msg)))
+            last_print_len = len(padded)
+            sys.stdout.write("\r" + padded)
+            sys.stdout.flush()
+
+        t0 = time.time()
+        deadline = t0 + duration_sec
+        last_seen = start_len
+        print_progress_line(f"  t=   0s chain_length={start_len} (+0)")
+
+        while True:
+            now = time.time()
+            remaining = deadline - now
+            if remaining <= 0:
+                break
+            time.sleep(min(progress_interval_sec, remaining))
+            elapsed = int(time.time() - t0)
+
+            cur = client_chain_length(addr, timeout_sec=2.0)
+            if cur is not None:
+                last_seen = cur
+            print_progress_line(
+                f"  t={elapsed:>4}s chain_length={last_seen} (+{last_seen - start_len})"
+            )
+
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+    else:
+        time.sleep(duration_sec)
+
     end_len = wait_for_chain_length(
         observer_ip,
         port=port,
@@ -306,6 +348,12 @@ def main() -> int:
     p.add_argument("--ready-timeout", type=float, default=45.0)
     p.add_argument("--poll-interval", type=float, default=1.0)
     p.add_argument(
+        "--progress-interval",
+        type=float,
+        default=10.0,
+        help="Seconds between intermediate client chain_length samples during the window (0 to disable)",
+    )
+    p.add_argument(
         "--out-dir",
         type=str,
         default=str(REPO_ROOT / "logs" / "perf"),
@@ -346,6 +394,7 @@ def main() -> int:
                     warmup_sec=args.warmup,
                     ready_timeout_sec=args.ready_timeout,
                     poll_interval_sec=args.poll_interval,
+                    progress_interval_sec=args.progress_interval,
                 )
                 results.append(res)
                 print(
