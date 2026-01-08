@@ -3,6 +3,7 @@
 import { Box, Flex, HStack, VStack, Text, Badge, Card, Stat, Spinner, Button } from '@chakra-ui/react';
 import { FiRefreshCw, FiDatabase, FiCpu, FiActivity, FiHash } from 'react-icons/fi';
 import { useBlockchainStatus } from '../hooks/useBlockchain';
+import { useConfig } from '../hooks/useConfig';
 
 // Helper function to get short ID (first 6 characters)
 const shortID = (id: string): string => {
@@ -11,8 +12,9 @@ const shortID = (id: string): string => {
 };
 
 export function BlockchainDashboard() {
+  const { minerAddress } = useConfig();
   const { status, loading, error, refresh } = useBlockchainStatus(
-    'localhost:8001',
+    minerAddress,
     false,
     true,
     5000

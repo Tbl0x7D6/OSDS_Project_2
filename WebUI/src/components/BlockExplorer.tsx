@@ -14,6 +14,7 @@ import {
 } from '@chakra-ui/react';
 import { FiPackage, FiRefreshCw, FiClock, FiHash } from 'react-icons/fi';
 import { useBlockchainStatus } from '../hooks/useBlockchain';
+import { useConfig } from '../hooks/useConfig';
 import type { BlockOutput, TransactionOutput } from '../types/blockchain';
 
 // Helper function to get short ID (first 6 characters)
@@ -23,8 +24,9 @@ const shortID = (id: string): string => {
 };
 
 export function BlockExplorer() {
+  const { minerAddress } = useConfig();
   const { status, loading, error, refresh } = useBlockchainStatus(
-    'localhost:8001',
+    minerAddress,
     true, // 包含详细信息
     false
   );

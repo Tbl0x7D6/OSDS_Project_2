@@ -15,9 +15,11 @@ import {
 } from '@chakra-ui/react';
 import { FiCreditCard, FiPlus, FiEye, FiEyeOff, FiCopy, FiCheck } from 'react-icons/fi';
 import { useGenerateWallet, useWalletBalance } from '../hooks/useBlockchain';
+import { useConfig } from '../hooks/useConfig';
 import { toaster } from './ui/toaster';
 
 export function WalletManager() {
+  const { minerAddress } = useConfig();
   const { wallet, loading: generating, generate } = useGenerateWallet();
   const [currentAddress, setCurrentAddress] = useState('');
   const [showPrivateKey, setShowPrivateKey] = useState(false);
@@ -28,7 +30,7 @@ export function WalletManager() {
     loading: balanceLoading,
     error: balanceError,
     refresh: refreshBalance,
-  } = useWalletBalance(currentAddress, 'localhost:8001', true, 10000);
+  } = useWalletBalance(currentAddress, minerAddress, true, 10000);
 
   const copyToClipboard = async (text: string, label: string) => {
     await navigator.clipboard.writeText(text);

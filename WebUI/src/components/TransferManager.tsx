@@ -16,12 +16,13 @@ import {
 } from '@chakra-ui/react';
 import { FiSend, FiRefreshCw, FiAlertCircle, FiCheckCircle } from 'react-icons/fi';
 import { BlockchainAPI, isErrorOutput } from '../services/api';
+import { useConfig } from '../hooks/useConfig';
 import { toaster } from './ui/toaster';
 import type { WalletStatusOutput, UTXOOutput, TransferInput } from '../types/blockchain';
 import { satoshiToBTC, btcToSatoshi } from '../types/blockchain';
 
 export function TransferManager() {
-  const [minerAddress] = useState('localhost:8001');
+  const { minerAddress } = useConfig();
   
   // Wallet info
   const [senderAddress, setSenderAddress] = useState('');

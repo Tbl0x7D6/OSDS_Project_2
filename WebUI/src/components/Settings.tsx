@@ -13,15 +13,16 @@ import {
 } from '@chakra-ui/react';
 import { FiSettings, FiServer } from 'react-icons/fi';
 import { toaster } from './ui/toaster';
+import { useConfig } from '../hooks/useConfig';
 
 export function Settings() {
-  const [minerAddress, setMinerAddress] = useState('localhost:8001');
-  const [apiUrl, setApiUrl] = useState('http://localhost:3000/api');
+  const config = useConfig();
+  const [minerAddress, setMinerAddress] = useState(config.minerAddress);
+  const [apiUrl, setApiUrl] = useState(config.apiUrl);
 
   const handleSave = () => {
-    // 这里可以保存到 localStorage
-    localStorage.setItem('minerAddress', minerAddress);
-    localStorage.setItem('apiUrl', apiUrl);
+    // 使用 useConfig hook 保存配置
+    config.updateConfig({ minerAddress, apiUrl });
     
     toaster.create({
       title: '设置已保存',
