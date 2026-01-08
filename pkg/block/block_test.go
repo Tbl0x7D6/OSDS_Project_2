@@ -1,6 +1,7 @@
 package block
 
 import (
+	"blockchain/pkg/config"
 	"blockchain/pkg/transaction"
 	"testing"
 )
@@ -374,5 +375,95 @@ func TestMerkleRootInHash(t *testing.T) {
 	hash3 := block.CalculateHash()
 	if hash1 != hash3 {
 		t.Error("Restoring merkle root should restore original hash")
+	}
+}
+
+func TestLegacyModeHashCalculation(t *testing.T) {
+	// Save current config
+	originalUseMerkle := config.UseMerkleTree()
+	defer config.SetUseMerkleTree(originalUseMerkle)
+
+	coinbase := transaction.NewCoinbaseTransaction("miner1", 5000000000, 1)
+	tx1 := transaction.NewCoinbaseTransaction("addr1", 1000, 1)
+	txs := []*transaction.Transaction{coinbase, tx1}
+
+	// Test with Merkle Tree mode
+	config.SetUseMerkleTree(true)
+	blockMerkle := NewBlock(1, txs, "prev_hash", 2, "miner1")
+	blockMerkle.SetHash()
+
+	if blockMerkle.MerkleRoot == "" {
+		t.Error("MerkleRoot should be set in Merkle Tree mode")
+	}
+
+	// Test with Legacy mode (direct transaction serialization)
+	config.SetUseMerkleTree(false)
+	blockLegacy := NewBlock(1, txs, "prev_hash", 2, "miner1")
+	blockLegacy.Timestamp = blockMerkle.Timestamp // Use same timestamp for comparison
+	blockLegacy.SetHash()
+
+	// In legacy mode, MerkleRoot should not be set during block creation
+	if blockLegacy.MerkleRoot != "" {
+		t.Error("MerkleRoot should NOT be set in Legacy mode during block creation")
+	}
+
+	// Hash should be different between modes (unless by coincidence)
+	// Actually, they should definitely be different since one uses MerkleRoot string
+	// and the other uses concatenated transaction IDs
+	if blockMerkle.Hash == blockLegacy.Hash {
+		t.Error("Hash should be different between Merkle and Legacy modes")
+	}
+}
+
+func TestLegacyModeHashConsistency(t *testing.T) {
+	// Save current config
+	originalUseMerkle := config.UseMerkleTree()
+	defer config.SetUseMerkleTree(originalUseMerkle)
+
+	// Set to legacy mode
+	config.SetUseMerkleTree(false)
+
+	coinbase := transaction.NewCoinbaseTransaction("miner1", 5000000000, 1)
+	txs := []*transaction.Transaction{coinbase}
+
+	block := NewBlock(1, txs, "prev_hash", 2, "miner1")
+	block.SetHash()
+	hash1 := block.Hash
+
+	// Hash should be deterministic
+	hash2 := block.CalculateHash()
+	if hash1 != hash2 {
+		t.Error("Legacy mode hash should be deterministic")
+	}
+}
+
+func TestModeSwitch(t *testing.T) {
+	// Save current config
+	originalUseMerkle := config.UseMerkleTree()
+	defer config.SetUseMerkleTree(originalUseMerkle)
+
+	coinbase := transaction.NewCoinbaseTransaction("miner1", 5000000000, 1)
+	txs := []*transaction.Transaction{coinbase}
+
+	// Create block in Merkle mode
+	config.SetUseMerkleTree(true)
+	block := NewBlock(1, txs, "prev_hash", 2, "miner1")
+	block.SetHash()
+	merkleHash := block.Hash
+
+	// Same block recalculated in legacy mode should have different hash
+	config.SetUseMerkleTree(false)
+	legacyHash := block.CalculateHash()
+
+	if merkleHash == legacyHash {
+		t.Error("Switching modes should produce different hashes")
+	}
+
+	// Switch back to merkle mode
+	config.SetUseMerkleTree(true)
+	merkleHash2 := block.CalculateHash()
+
+	if merkleHash != merkleHash2 {
+		t.Error("Same mode should produce same hash")
 	}
 }

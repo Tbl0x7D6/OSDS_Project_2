@@ -3,6 +3,7 @@ package main
 
 import (
 	"blockchain/pkg/block"
+	"blockchain/pkg/config"
 	"blockchain/pkg/network"
 	"flag"
 	"fmt"
@@ -28,11 +29,12 @@ func main() {
 	peers := flag.String("peers", "", "Comma-separated list of peer addresses (e.g., localhost:8002,localhost:8003)")
 	difficulty := flag.Int("difficulty", 4, "Mining difficulty (number of leading zeros)")
 	autoMine := flag.Bool("mine", true, "Start mining automatically")
+	useMerkle := flag.Bool("merkle", true, "Use Merkle Tree for block hash calculation (default: true)")
 
 	flag.Parse()
 
 	if *id == "" {
-		fmt.Println("Usage: miner -id <id> -address <address> [-peers <peers>] [-difficulty <n>] [-mine]")
+		fmt.Println("Usage: miner -id <id> -address <address> [-peers <peers>] [-difficulty <n>] [-mine] [-merkle]")
 		fmt.Println()
 		fmt.Println("Options:")
 		fmt.Println("  -id        Miner ID (required)")
@@ -40,7 +42,16 @@ func main() {
 		fmt.Println("  -peers     Comma-separated peer addresses")
 		fmt.Println("  -difficulty Mining difficulty (default: 4)")
 		fmt.Println("  -mine      Start mining automatically (default: true)")
+		fmt.Println("  -merkle    Use Merkle Tree for block hash (default: true)")
 		os.Exit(1)
+	}
+
+	// Set global Merkle Tree configuration
+	config.SetUseMerkleTree(*useMerkle)
+	if *useMerkle {
+		log.Printf("[%s] Using Merkle Tree for block hash calculation", shortID(*id))
+	} else {
+		log.Printf("[%s] Using direct transaction serialization for block hash calculation (legacy mode)", shortID(*id))
 	}
 
 	// Parse peers

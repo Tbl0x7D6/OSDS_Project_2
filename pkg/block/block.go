@@ -2,6 +2,7 @@
 package block
 
 import (
+	"blockchain/pkg/config"
 	"blockchain/pkg/merkle"
 	"blockchain/pkg/transaction"
 	"crypto/sha256"
@@ -35,8 +36,10 @@ func NewBlock(index int64, transactions []*transaction.Transaction, prevHash str
 		Difficulty:   difficulty,
 		MinerID:      minerID,
 	}
-	// Calculate Merkle Root
-	block.MerkleRoot = block.CalculateMerkleRoot()
+	// Calculate Merkle Root if using Merkle Tree mode
+	if config.UseMerkleTree() {
+		block.MerkleRoot = block.CalculateMerkleRoot()
+	}
 	return block
 }
 
@@ -53,7 +56,10 @@ func NewGenesisBlock(difficulty int) *Block {
 		Difficulty:   difficulty,
 		MinerID:      "genesis",
 	}
-	block.MerkleRoot = block.CalculateMerkleRoot()
+	// Calculate Merkle Root if using Merkle Tree mode
+	if config.UseMerkleTree() {
+		block.MerkleRoot = block.CalculateMerkleRoot()
+	}
 	block.Hash = block.CalculateHash()
 	return block
 }
@@ -78,9 +84,19 @@ func (b *Block) CalculateMerkleRoot() string {
 
 // CalculateHash computes the SHA256 hash of the block
 func (b *Block) CalculateHash() string {
-	// Use MerkleRoot instead of serializing all transactions
+	var txData string
+	if config.UseMerkleTree() {
+		// Use MerkleRoot for hash calculation
+		txData = b.MerkleRoot
+	} else {
+		// Serialize transactions directly (legacy mode)
+		for _, tx := range b.Transactions {
+			txData += tx.ID
+		}
+	}
+
 	data := fmt.Sprintf("%d%d%s%s%d%d%s",
-		b.Index, b.Timestamp, b.MerkleRoot, b.PrevHash, b.Nonce, b.Difficulty, b.MinerID)
+		b.Index, b.Timestamp, txData, b.PrevHash, b.Nonce, b.Difficulty, b.MinerID)
 	hash := sha256.Sum256([]byte(data))
 	return hex.EncodeToString(hash[:])
 }
