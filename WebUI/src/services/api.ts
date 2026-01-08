@@ -9,7 +9,14 @@ import type {
   TransferOutput,
 } from '../types/blockchain';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const DEFAULT_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+
+/**
+ * Get current API base URL from localStorage or use default
+ */
+function getApiBaseUrl(): string {
+  return localStorage.getItem('apiUrl') || DEFAULT_API_URL;
+}
 
 export class BlockchainAPI {
   /**
@@ -17,7 +24,7 @@ export class BlockchainAPI {
    */
   static async generateWallet(): Promise<WalletOutput | ErrorOutput> {
     try {
-      const response = await fetch(`${API_BASE_URL}/wallet/generate`, {
+      const response = await fetch(`${getApiBaseUrl()}/wallet/generate`, {
         method: 'POST',
       });
       return await response.json();
@@ -38,7 +45,7 @@ export class BlockchainAPI {
       if (minerAddr) params.append('miner', minerAddr);
       if (includeDetail) params.append('detail', 'true');
 
-      const response = await fetch(`${API_BASE_URL}/blockchain/status?${params}`);
+      const response = await fetch(`${getApiBaseUrl()}/blockchain/status?${params}`);
       return await response.json();
     } catch (error: unknown) {
       return { error: error instanceof Error ? error.message : 'Unknown error' };
@@ -57,7 +64,7 @@ export class BlockchainAPI {
       if (minerAddr) params.append('miner', minerAddr);
 
       const response = await fetch(
-        `${API_BASE_URL}/wallet/${address}/balance?${params}`
+        `${getApiBaseUrl()}/wallet/${address}/balance?${params}`
       );
       return await response.json();
     } catch (error: unknown) {
@@ -72,7 +79,7 @@ export class BlockchainAPI {
     transferData: TransferInput
   ): Promise<TransferOutput | ErrorOutput> {
     try {
-      const response = await fetch(`${API_BASE_URL}/transaction/transfer`, {
+      const response = await fetch(`${getApiBaseUrl()}/transaction/transfer`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
