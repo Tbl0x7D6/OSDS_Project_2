@@ -24,19 +24,19 @@ func shortID(id string) string {
 func main() {
 	// Parse command line arguments
 	id := flag.String("id", "", "Miner ID")
-	address := flag.String("address", "", "Listen address (e.g., localhost:8001)")
+	address := flag.String("address", "0.0.0.0:8001", "Listen address (default: 0.0.0.0:8001)")
 	peers := flag.String("peers", "", "Comma-separated list of peer addresses (e.g., localhost:8002,localhost:8003)")
 	difficulty := flag.Int("difficulty", 4, "Mining difficulty (number of leading zeros)")
 	autoMine := flag.Bool("mine", true, "Start mining automatically")
 
 	flag.Parse()
 
-	if *id == "" || *address == "" {
+	if *id == "" {
 		fmt.Println("Usage: miner -id <id> -address <address> [-peers <peers>] [-difficulty <n>] [-mine]")
 		fmt.Println()
 		fmt.Println("Options:")
 		fmt.Println("  -id        Miner ID (required)")
-		fmt.Println("  -address   Listen address (required)")
+		fmt.Println("  -address   Listen address (default: 0.0.0.0:8001)")
 		fmt.Println("  -peers     Comma-separated peer addresses")
 		fmt.Println("  -difficulty Mining difficulty (default: 4)")
 		fmt.Println("  -mine      Start mining automatically (default: true)")

@@ -50,3 +50,6 @@ demo.sh~
 
 # Ignore binaries
 bin/
+
+*.txt
+logs/
