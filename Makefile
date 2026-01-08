@@ -22,7 +22,8 @@ MINER_PORT ?= 8001
 MINER_ADDR := 0.0.0.0:$(MINER_PORT)
 
 DEPLOY_TS := $(shell date +%Y%m%d_%H%M%S)
-DEPLOY_LOG := $(LOG_DIR)/deploy_$(DEPLOY_TS).log
+DEPLOY_DIR := $(LOG_DIR)/deploy
+DEPLOY_LOG := $(DEPLOY_DIR)/deploy_$(DEPLOY_TS).log
 WALLET_DIR := $(LOG_DIR)/wallets
 
 .PHONY: compile stop_miner deploy_miner download_log environment
@@ -57,6 +58,7 @@ deploy_miner:
 	@$(MAKE) stop_miner
 	@$(MAKE) compile
 	@$(MKDIR_P) $(LOG_DIR)
+	@$(MKDIR_P) $(DEPLOY_DIR)
 	@$(RM) $(WALLET_DIR)
 	@$(MKDIR_P) $(WALLET_DIR)
 	@echo "Deploying first $(COUNT) miners with difficulty $(DIFFICULTY)" | tee -a $(DEPLOY_LOG)
