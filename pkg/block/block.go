@@ -117,14 +117,39 @@ func (b *Block) HasValidHash() bool {
 	return b.Hash == b.CalculateHash()
 }
 
+var powNibbleLeadingZeros = [16]int{4, 3, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0}
+
+func countLeadingZeroBits(hash string) (int, bool) {
+	zeros := 0
+	for i := 0; i < len(hash); i++ {
+		var v int
+		switch {
+		case hash[i] >= '0' && hash[i] <= '9':
+			v = int(hash[i] - '0')
+		case hash[i] >= 'a' && hash[i] <= 'f':
+			v = int(hash[i]-'a') + 10
+		case hash[i] >= 'A' && hash[i] <= 'F':
+			v = int(hash[i]-'A') + 10
+		default:
+			return 0, false
+		}
+
+		if v == 0 {
+			zeros += 4
+			continue
+		}
+
+		zeros += powNibbleLeadingZeros[v]
+		return zeros, true
+	}
+
+	return zeros, true
+}
+
 // HasValidPoW checks if the block has a valid proof of work
 func (b *Block) HasValidPoW() bool {
-	// Check that hash has required number of leading zeros
-	prefix := ""
-	for i := 0; i < b.Difficulty; i++ {
-		prefix += "0"
-	}
-	return len(b.Hash) >= b.Difficulty && b.Hash[:b.Difficulty] == prefix
+	leading, ok := countLeadingZeroBits(b.Hash)
+	return ok && leading >= b.Difficulty
 }
 
 // Clone creates a deep copy of the block

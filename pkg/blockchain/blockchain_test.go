@@ -2,6 +2,7 @@ package blockchain
 
 import (
 	"blockchain/pkg/block"
+	"blockchain/pkg/pow"
 	"blockchain/pkg/transaction"
 	"testing"
 )
@@ -13,16 +14,10 @@ func createValidBlock(bc *Blockchain, minerID string) *block.Block {
 
 	newBlock := bc.CreateBlock(txs, minerID)
 
-	// Mine the block (find valid PoW)
-	target := ""
-	for i := 0; i < bc.Difficulty; i++ {
-		target += "0"
-	}
-
 	for nonce := int64(0); ; nonce++ {
 		newBlock.Nonce = nonce
 		hash := newBlock.CalculateHash()
-		if len(hash) >= bc.Difficulty && hash[:bc.Difficulty] == target {
+		if pow.ValidateHash(hash, bc.Difficulty) {
 			newBlock.Hash = hash
 			break
 		}
@@ -78,7 +73,7 @@ func TestAddBlockWithInvalidIndex(t *testing.T) {
 	for nonce := int64(0); ; nonce++ {
 		newBlock.Nonce = nonce
 		hash := newBlock.CalculateHash()
-		if len(hash) >= bc.Difficulty && hash[:bc.Difficulty] == "00" {
+		if pow.ValidateHash(hash, bc.Difficulty) {
 			newBlock.Hash = hash
 			break
 		}
@@ -109,7 +104,7 @@ func TestAddBlockWithInvalidPrevHash(t *testing.T) {
 	for nonce := int64(0); ; nonce++ {
 		newBlock.Nonce = nonce
 		hash := newBlock.CalculateHash()
-		if len(hash) >= bc.Difficulty && hash[:bc.Difficulty] == "00" {
+		if pow.ValidateHash(hash, bc.Difficulty) {
 			newBlock.Hash = hash
 			break
 		}

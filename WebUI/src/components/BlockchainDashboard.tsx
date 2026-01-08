@@ -97,7 +97,7 @@ export function BlockchainDashboard() {
                 </HStack>
               </Stat.Label>
               <Stat.ValueText fontSize="3xl" fontWeight="bold">
-                {status.difficulty}
+                {status.difficulty} bits
               </Stat.ValueText>
               <Stat.HelpText>挖矿难度</Stat.HelpText>
             </Stat.Root>

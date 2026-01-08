@@ -30,9 +30,53 @@ func NewProofOfWork(b *block.Block) *ProofOfWork {
 	}
 }
 
-// GetTarget returns the target prefix string for the given difficulty
+// GetTarget returns the zero-bit prefix string for the given bit-level difficulty.
 func GetTarget(difficulty int) string {
 	return strings.Repeat("0", difficulty)
+}
+
+var nibbleLeadingZeros = [16]int{4, 3, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0}
+
+// leadingZeroBits returns the count of leading zero bits in a hex-encoded hash.
+// The second return value is false when the hash is not valid hex.
+func leadingZeroBits(hash string) (int, bool) {
+	zeros := 0
+	for i := 0; i < len(hash); i++ {
+		var v int
+		switch {
+		case hash[i] >= '0' && hash[i] <= '9':
+			v = int(hash[i] - '0')
+		case hash[i] >= 'a' && hash[i] <= 'f':
+			v = int(hash[i]-'a') + 10
+		case hash[i] >= 'A' && hash[i] <= 'F':
+			v = int(hash[i]-'A') + 10
+		default:
+			return 0, false
+		}
+
+		if v == 0 {
+			zeros += 4
+			continue
+		}
+
+		zeros += nibbleLeadingZeros[v]
+		return zeros, true
+	}
+
+	return zeros, true
+}
+
+func meetsDifficulty(hash string, difficulty int) bool {
+	if difficulty <= 0 {
+		return true
+	}
+
+	leading, ok := leadingZeroBits(hash)
+	if !ok {
+		return false
+	}
+
+	return leading >= difficulty
 }
 
 // Mine performs the mining operation to find a valid nonce
@@ -40,7 +84,6 @@ func GetTarget(difficulty int) string {
 func (pow *ProofOfWork) Mine(ctx context.Context, callback func(nonce int64)) *MiningResult {
 	// Start from a random nonce to distribute mining attempts across miners
 	var nonce int64 = rand.Int64()
-	target := GetTarget(pow.Difficulty)
 	reportInterval := int64(100000) // Report every 100k attempts
 
 	for {
@@ -59,7 +102,7 @@ func (pow *ProofOfWork) Mine(ctx context.Context, callback func(nonce int64)) *M
 		pow.Block.Nonce = nonce
 		hash := pow.Block.CalculateHash()
 
-		if strings.HasPrefix(hash, target) {
+		if meetsDifficulty(hash, pow.Difficulty) {
 			pow.Block.Hash = hash
 			return &MiningResult{
 				Block:   pow.Block,
@@ -88,7 +131,6 @@ func (pow *ProofOfWork) MineParallel(ctx context.Context, workers int) *MiningRe
 			// Each worker starts from a random nonce + worker offset to avoid duplication
 			// This ensures different miners and workers explore different nonce spaces
 			var nonce int64 = rand.Int64() + int64(workerID)
-			target := GetTarget(pow.Difficulty)
 
 			// Create a copy of the block for this worker
 			workerBlock := pow.Block.Clone()
@@ -106,7 +148,7 @@ func (pow *ProofOfWork) MineParallel(ctx context.Context, workers int) *MiningRe
 					workerBlock.Nonce = nonce
 					hash := workerBlock.CalculateHash()
 
-					if strings.HasPrefix(hash, target) {
+					if meetsDifficulty(hash, pow.Difficulty) {
 						// Found a valid solution
 						if atomic.CompareAndSwapInt32(&found, 0, 1) {
 							workerBlock.Hash = hash
@@ -142,12 +184,10 @@ func Validate(b *block.Block) bool {
 	if b.Hash != b.CalculateHash() {
 		return false
 	}
-	target := GetTarget(b.Difficulty)
-	return strings.HasPrefix(b.Hash, target)
+	return meetsDifficulty(b.Hash, b.Difficulty)
 }
 
 // ValidateHash checks if a hash meets the difficulty requirement
 func ValidateHash(hash string, difficulty int) bool {
-	target := GetTarget(difficulty)
-	return strings.HasPrefix(hash, target)
+	return meetsDifficulty(hash, difficulty)
 }

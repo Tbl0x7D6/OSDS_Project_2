@@ -167,7 +167,7 @@ function BlockCard({ block, expanded, onToggle }: BlockCardProps) {
 
           <Flex justify="space-between">
             <Text color="fg.muted">难度:</Text>
-            <Badge colorPalette="orange">{block.difficulty}</Badge>
+            <Badge colorPalette="orange">{block.difficulty} bits</Badge>
           </Flex>
 
           <Flex justify="space-between">

@@ -4,7 +4,6 @@ import (
 	"blockchain/pkg/block"
 	"blockchain/pkg/transaction"
 	"context"
-	"strings"
 	"testing"
 	"time"
 )
@@ -28,7 +27,7 @@ func createCancellableContext(delay time.Duration) (context.Context, context.Can
 }
 
 func TestMine(t *testing.T) {
-	pow, _ := setupTestPoW(2)
+	pow, _ := setupTestPoW(10)
 
 	result := pow.Mine(context.Background(), nil)
 
@@ -36,8 +35,9 @@ func TestMine(t *testing.T) {
 		t.Error("Mining should succeed")
 	}
 
-	if !strings.HasPrefix(result.Block.Hash, "00") {
-		t.Errorf("Hash should have 2 leading zeros, got %s", result.Block.Hash[:10])
+	leading, ok := leadingZeroBits(result.Block.Hash)
+	if !ok || leading < pow.Difficulty {
+		t.Errorf("Hash should have %d leading zero bits, got %d (hash: %s)", pow.Difficulty, leading, result.Block.Hash[:10])
 	}
 
 	if !result.Block.HasValidPoW() {
@@ -46,7 +46,7 @@ func TestMine(t *testing.T) {
 }
 
 func TestMineWithCancellation(t *testing.T) {
-	pow, _ := setupTestPoW(8)
+	pow, _ := setupTestPoW(24)
 	ctx, _ := createCancellableContext(100 * time.Millisecond)
 
 	result := pow.Mine(ctx, nil)
@@ -57,7 +57,7 @@ func TestMineWithCancellation(t *testing.T) {
 }
 
 func TestMineWithCallback(t *testing.T) {
-	pow, _ := setupTestPoW(2)
+	pow, _ := setupTestPoW(10)
 
 	callbackCount := 0
 	callback := func(nonce int64) {
@@ -72,7 +72,7 @@ func TestMineWithCallback(t *testing.T) {
 }
 
 func TestMineParallel(t *testing.T) {
-	pow, _ := setupTestPoW(2)
+	pow, _ := setupTestPoW(10)
 
 	result := pow.MineParallel(context.Background(), 4)
 
@@ -80,13 +80,14 @@ func TestMineParallel(t *testing.T) {
 		t.Error("Parallel mining should succeed")
 	}
 
-	if !strings.HasPrefix(result.Block.Hash, "00") {
-		t.Errorf("Hash should have 2 leading zeros, got %s", result.Block.Hash[:10])
+	leading, ok := leadingZeroBits(result.Block.Hash)
+	if !ok || leading < pow.Difficulty {
+		t.Errorf("Hash should have %d leading zero bits, got %d (hash: %s)", pow.Difficulty, leading, result.Block.Hash[:10])
 	}
 }
 
 func TestMineParallelWithCancellation(t *testing.T) {
-	pow, _ := setupTestPoW(8)
+	pow, _ := setupTestPoW(24)
 	ctx, _ := createCancellableContext(100 * time.Millisecond)
 
 	result := pow.MineParallel(ctx, 4)
@@ -97,7 +98,7 @@ func TestMineParallelWithCancellation(t *testing.T) {
 }
 
 func TestValidate(t *testing.T) {
-	pow, _ := setupTestPoW(2)
+	pow, _ := setupTestPoW(10)
 	result := pow.Mine(context.Background(), nil)
 	if !result.Success {
 		t.Fatal("Mining should succeed")
@@ -117,59 +118,59 @@ func TestValidate(t *testing.T) {
 
 func TestValidateHash(t *testing.T) {
 	// Valid hashes
-	if !ValidateHash("00abc", 2) {
-		t.Error("Hash with 2 leading zeros should be valid for difficulty 2")
+	if !ValidateHash("0123", 5) {
+		t.Error("Hash with 5 leading zero bits should be valid")
 	}
-	if !ValidateHash("000abc", 3) {
-		t.Error("Hash with 3 leading zeros should be valid for difficulty 3")
+	if !ValidateHash("00abc", 8) {
+		t.Error("Hash with 8 leading zero bits should be valid")
 	}
 
 	// Invalid hashes
-	if ValidateHash("0abc", 2) {
-		t.Error("Hash with 1 leading zero should be invalid for difficulty 2")
+	if ValidateHash("00abc", 9) {
+		t.Error("Hash with only 8 leading zero bits should be invalid for difficulty 9")
 	}
-	if ValidateHash("abc", 1) {
-		t.Error("Hash without leading zeros should be invalid for difficulty 1")
+	if ValidateHash("08abc", 5) {
+		t.Error("Hash without enough leading zero bits should be invalid for difficulty 5")
 	}
 }
 
 func TestGetTarget(t *testing.T) {
-	if GetTarget(2) != "00" {
-		t.Error("Target for difficulty 2 should be '00'")
+	if GetTarget(5) != "00000" {
+		t.Error("Target for difficulty 5 should contain 5 zero bits")
 	}
-	if GetTarget(4) != "0000" {
-		t.Error("Target for difficulty 4 should be '0000'")
+	if GetTarget(1) != "0" {
+		t.Error("Target for difficulty 1 should contain 1 zero bit")
 	}
 }
 
 func TestDifficultyAffectsMiningSpeed(t *testing.T) {
 	// Test that higher difficulty takes longer
-	// Using difficulty 1 and 2 for reasonable test time
+	// Using bit-level difficulty for reasonable test time
 
-	// Difficulty 1
-	pow1, _ := setupTestPoW(1)
+	// Difficulty 6 bits
+	pow1, _ := setupTestPoW(6)
 	start1 := time.Now()
 	result1 := pow1.Mine(context.Background(), nil)
 	time1 := time.Since(start1)
 
 	if !result1.Success {
-		t.Fatal("Mining with difficulty 1 should succeed")
+		t.Fatal("Mining with difficulty 6 should succeed")
 	}
 
-	// Difficulty 2
-	pow2, _ := setupTestPoW(2)
+	// Difficulty 10 bits
+	pow2, _ := setupTestPoW(10)
 	start2 := time.Now()
 	result2 := pow2.Mine(context.Background(), nil)
 	time2 := time.Since(start2)
 
 	if !result2.Success {
-		t.Fatal("Mining with difficulty 2 should succeed")
+		t.Fatal("Mining with difficulty 10 should succeed")
 	}
 
-	// We can't guarantee exact times, but generally diff 2 should take longer
+	// We can't guarantee exact times, but generally higher difficulty should take longer
 	// Just log the times for manual verification
-	t.Logf("Difficulty 1: %v (nonce: %d)", time1, result1.Nonce)
-	t.Logf("Difficulty 2: %v (nonce: %d)", time2, result2.Nonce)
+	t.Logf("Difficulty 6 bits: %v (nonce: %d)", time1, result1.Nonce)
+	t.Logf("Difficulty 10 bits: %v (nonce: %d)", time2, result2.Nonce)
 }
 
 func BenchmarkMine(b *testing.B) {
