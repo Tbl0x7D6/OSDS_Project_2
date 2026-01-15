@@ -6,6 +6,7 @@ ROOT_DIR=$(cd "$(dirname "$0")" && pwd)
 BIN_MINER="$ROOT_DIR/bin/miner"
 BIN_CLIENT="$ROOT_DIR/bin/client"
 LOG_DIR="$ROOT_DIR/logs/test_merkle_performance"
+MINER_IP_FILE="$ROOT_DIR/minerip.txt"
 
 mkdir -p "$LOG_DIR"
 
@@ -42,6 +43,42 @@ log_section() {
 json_get() {
     echo "$1" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('$2',''))" 2>/dev/null || echo ""
 }
+
+# Read miner IPs from external file
+read_miner_ips() {
+    if [[ ! -f "$MINER_IP_FILE" ]]; then
+        echo "  Warning: Miner IP file not found: $MINER_IP_FILE"
+        echo "  Using default localhost entries..."
+        EXTERNAL_MINER_IPS=("127.0.0.1" "127.0.0.1" "127.0.0.1" "127.0.0.1" "127.0.0.1")
+        return
+    fi
+    
+    EXTERNAL_MINER_IPS=()
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line=$(echo "$line" | xargs)
+        if [[ -n "$line" && ! "$line" =~ ^# ]]; then
+            EXTERNAL_MINER_IPS+=("$line")
+        fi
+    done < "$MINER_IP_FILE"
+    
+    echo "  Loaded ${#EXTERNAL_MINER_IPS[@]} miner IP(s) from $MINER_IP_FILE"
+    for i in "${!EXTERNAL_MINER_IPS[@]}"; do
+        echo "    Miner $((i+1)) IP: ${EXTERNAL_MINER_IPS[$i]}"
+    done
+}
+
+# Get miner IP for a given index (cycles through available IPs if needed)
+get_miner_ip() {
+    local index=$1
+    local ip_count=${#EXTERNAL_MINER_IPS[@]}
+    if [[ $ip_count -eq 0 ]]; then
+        echo "127.0.0.1"
+    else
+        local ip_index=$((index % ip_count))
+        echo "${EXTERNAL_MINER_IPS[$ip_index]}"
+    fi
+}
+
 
 get_first_utxo() {
     local json_input="$1"
@@ -110,21 +147,28 @@ start_miners() {
     local merkle_flag=$1 base_port=$2 prefix=$3
     MINER_ADDRESSES=()
     
+    # Build miner addresses using external IPs
     for i in $(seq 1 $NUM_MINERS); do
-        MINER_ADDRESSES+=("localhost:$((base_port + i - 1))")
+        local miner_ip=$(get_miner_ip $((i - 1)))
+        local port=$((base_port + i - 1))
+        MINER_ADDRESSES+=("${miner_ip}:${port}")
     done
     
     for i in $(seq 1 $NUM_MINERS); do
+        local miner_ip=$(get_miner_ip $((i - 1)))
         local port=$((base_port + i - 1))
-        local addr="localhost:$port"
+        local addr="${miner_ip}:${port}"
         local id="${MINER_PUBKEYS[$((i-1))]}"
         local peers=""
         
+        # Build peer list using external IPs
         for j in $(seq 1 $NUM_MINERS); do
-            [ $j -ne $i ] && {
+            if [ $j -ne $i ]; then
+                local peer_ip=$(get_miner_ip $((j - 1)))
+                local peer_port=$((base_port + j - 1))
                 [ -n "$peers" ] && peers="$peers," || true
-                peers="${peers}localhost:$((base_port + j - 1))"
-            }
+                peers="${peers}${peer_ip}:${peer_port}"
+            fi
         done
         
         echo "  Starting ${prefix}miner$i at $addr (merkle=$merkle_flag)"
@@ -272,6 +316,9 @@ generate_wallets
 
 log_section "Generating miner keypairs"
 generate_miner_keys
+
+log_section "Loading miner IPs"
+read_miner_ips
 
 run_test "false" "no_merkle" 9900
 run_test "true" "with_merkle" 9950
