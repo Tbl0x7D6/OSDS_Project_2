@@ -247,7 +247,7 @@ pnpm dev
 ```
 separately. You may see an application running on some port (the port number is shown along with the `pnpm` command), that is the frontend.
 
-![](.\pics\miner_addr.png)
+![](./pics/miner_addr.png)
 
 At the very begining, you should set the miner address manually.
 
@@ -255,19 +255,19 @@ The WebUI provides:
 
 - Blockchain status dashboard
 
-  ![](.\pics\info.png)
+  ![](./pics/info.png)
 
 - Wallet management
 
-  ![](.\pics\wallet.png)
+  ![](./pics/wallet.png)
 
 - Block explorer
 
-  ![](.\pics\chain.png)
+  ![](./pics/chain.png)
 
 - Transaction transfer interface
 
-  ![](.\pics\tx.png)
+  ![](./pics/tx.png)
 
 ## Troubleshooting
 
