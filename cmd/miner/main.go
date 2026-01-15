@@ -30,6 +30,7 @@ func main() {
 	difficulty := flag.Int("difficulty", 4, "Mining difficulty (number of leading zeros)")
 	autoMine := flag.Bool("mine", true, "Start mining automatically")
 	useMerkle := flag.Bool("merkle", true, "Use Merkle Tree for block hash calculation (default: true)")
+	dynamicDiff := flag.Bool("dynamic-difficulty", false, "Enable dynamic difficulty adjustment (default: false)")
 
 	flag.Parse()
 
@@ -43,6 +44,7 @@ func main() {
 		fmt.Println("  -difficulty Mining difficulty (default: 4)")
 		fmt.Println("  -mine      Start mining automatically (default: true)")
 		fmt.Println("  -merkle    Use Merkle Tree for block hash (default: true)")
+		fmt.Println("  -dynamic-difficulty  Enable dynamic difficulty adjustment (default: false)")
 		os.Exit(1)
 	}
 
@@ -52,6 +54,14 @@ func main() {
 		log.Printf("[%s] Using Merkle Tree for block hash calculation", shortID(*id))
 	} else {
 		log.Printf("[%s] Using direct transaction serialization for block hash calculation (legacy mode)", shortID(*id))
+	}
+
+	// Set dynamic difficulty configuration
+	config.SetUseDynamicDifficulty(*dynamicDiff)
+	if *dynamicDiff {
+		log.Printf("[%s] Dynamic difficulty adjustment enabled (target: 1 block per 10 seconds)", shortID(*id))
+	} else {
+		log.Printf("[%s] Static difficulty mode (difficulty: %d)", shortID(*id), *difficulty)
 	}
 
 	// Parse peers

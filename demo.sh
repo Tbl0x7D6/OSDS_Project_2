@@ -120,6 +120,7 @@ start_miner_group() {
         if [ -n "$peers" ]; then
             args+=(-peers "$peers")
         fi
+        # echo "$BIN_MINER" "${args[@]}"
         "$BIN_MINER" "${args[@]}" >"$log_file" 2>&1 &
         PIDS+=($!)
         sleep 0.3

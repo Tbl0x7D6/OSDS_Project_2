@@ -360,3 +360,25 @@ func (bc *Blockchain) GetBalance(address string) int64 {
 	defer bc.mu.RUnlock()
 	return bc.UTXOSet.GetBalance(address)
 }
+
+// GetRecentBlocks returns the most recent n blocks for difficulty calculation
+func (bc *Blockchain) GetRecentBlocks(n int) []*block.Block {
+	bc.mu.RLock()
+	defer bc.mu.RUnlock()
+
+	length := len(bc.Blocks)
+	if length == 0 {
+		return nil
+	}
+
+	if n > length {
+		n = length
+	}
+
+	start := length - n
+	blocks := make([]*block.Block, n)
+	for i := start; i < length; i++ {
+		blocks[i-start] = bc.Blocks[i].Clone()
+	}
+	return blocks
+}
