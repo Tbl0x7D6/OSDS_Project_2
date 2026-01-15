@@ -8,7 +8,6 @@
 \usepackage{mathrsfs}
 \usepackage{subfigure}
 \usepackage{cite}
-\usepackage{hyperref}
 \usepackage{enumitem}
 \usepackage{dirtytalk}
 \usepackage{float}
@@ -19,6 +18,8 @@
 \usepackage{xcolor}
 \usepackage{booktabs}
 \usepackage{graphicx}
+\usepackage[colorlinks=true,allcolors=blue]{hyperref}
+\usepackage{cleveref}
 
 \usepackage{geometry}
 \geometry{bottom=22mm,top=22mm, left=30mm, right=30mm}
@@ -52,7 +53,7 @@
 
 This project implements a Bitcoin-like blockchain system based on the Nakamoto consensus protocol. The system consists of two main components: miners (peers) that participate in the consensus protocol, and clients (wallets) that submit transactions to the chain.
 
-Check README.md for detailed instructions on how to build and run the system.
+Check README.md for detailed instructions on how to build and run the system. Also, the three shell scripts provided can help automate testing and performance evaluation. There usage is explained in the README.md.
 
 \subsection{System Architecture}
 
@@ -94,11 +95,10 @@ Performance evaluation was conducted on a Kubernetes cluster with 5 miner nodes.
 
 \subsection{Results}
 
-Table \ref{tab:perf_results} shows the performance results from our evaluation, where we deployed different numbers of miners (1, 3, 5) with varying difficulty levels (15, 18, 20) and measured blocks mined in a 120-second window.
+\Cref{tab:perf_results} shows the performance results from our evaluation, where we deployed different numbers of miners (1, 3, 5) with varying difficulty levels (15, 18, 20) and measured blocks mined in a 120-second window.
 
 \begin{table}[H]
 \centering
-\label{tab:perf_results}
 \begin{tabular}{@{}cccc@{}}
 \toprule
 Miners & Difficulty & Blocks Mined & Blocks/Second \\
@@ -117,6 +117,7 @@ Miners & Difficulty & Blocks Mined & Blocks/Second \\
 \bottomrule
 \end{tabular}
 \caption{Performance Results: Blocks Mined in 120 Seconds}
+\label{tab:perf_results}
 \end{table}
 
 \subsection{Analysis}
@@ -133,13 +134,15 @@ We implemented a Merkle tree data structure for efficient transaction verificati
 
 The implementation supports Simplified Payment Verification (SPV), allowing lightweight clients to verify transaction inclusion without downloading the entire block. A proof consists of the sibling hashes along the path from the transaction to the root. The Merkle tree feature can be enabled or disabled via a global configuration flag.
 
-\textit{[Placeholder: Performance comparison between Merkle tree mode and legacy mode will be added after completing the evaluation.]}
+We compared block generation rates with and without Merkle tree enabled using difficulty 18 and a 60-second mining window. With Merkle tree enabled, miners generated 84 blocks; without Merkle tree (controlled by a flag), miners generated 86 blocks. The number of blocks drops because we send transactions. The difference is negligible, indicating that the Merkle tree computation overhead is minimal compared to the PoW mining cost.
+
+The Merkle tree provides efficient transaction verification without impacting mining performance, which is difficult to test due to the dominant PoW cost.
 
 \subsection{WebUI Interface}
 
 We developed a web-based visualization interface using React, TypeScript, and Vite with Chakra UI for styling. The WebUI provides a blockchain dashboard showing real-time status, a wallet manager for creating and managing wallets, a transfer manager for submitting transactions, a block explorer for browsing blocks and transactions, and settings for configuring miner connections.
 
-\textit{[Placeholder: Screenshots and detailed feature descriptions will be added manually.]}
+By \verb|make environment|, we can build the environment with both backend miner and frontend WebUI. The WebUI connects to the miner's RPC endpoints to fetch blockchain data and submit transactions. More details (including figures) are in README.md.
 
 \subsection{UTXO Model for Double-Spend Prevention}
 
@@ -161,7 +164,37 @@ While the UTXO model provides strong double-spend protection, it has become a pe
 
 The $O(n)$ complexity of synchronization leads to significant slowdowns as the blockchain grows. Miners spend increasing amounts of time managing and exchanging the UTXO set (and the entire blockchain) rather than focusing on mining new blocks. This bottleneck limits scalability and reduces the benefits of adding more miners, as they cannot effectively utilize their computational resources.
 
-\textit{[Placeholder: Detailed performance analysis of UTXO bottleneck will be added after profiling.]}
+\subsection{Dynamic Difficulty Adjustment}
+
+We implemented a dynamic difficulty adjustment mechanism that automatically adjusts the mining difficulty based on recent block generation rates. The target is to produce one block every 10 seconds. The adjustment is checked every 6 blocks (approximately 1 minute at the target rate).
+
+The algorithm calculates the actual time taken to mine the last 6 blocks and compares it with the expected time. If blocks are being mined too fast, difficulty increases; if too slow, difficulty decreases. The adjustment is bounded to prevent drastic changes, and difficulty is clamped between a minimum of 1 and maximum of 32 bits.
+
+This feature can be enabled with the \verb|-dynamic-difficulty| flag when starting a miner. When enabled, the system self-regulates to maintain a consistent block generation rate regardless of network hash power changes.
+
+\subsection{Parallel Mining}
+
+We implemented parallel mining to utilize multiple CPU cores for faster PoW computation. The parallel mining algorithm spawns multiple worker goroutines, each exploring a different region of the nonce space. Each worker starts from a random nonce offset by its worker ID to avoid duplication, and workers increment their nonce by the total worker count to ensure non-overlapping search spaces.
+
+\Cref{tab:parallel_results} shows the parallel mining performance with different thread counts, measured with difficulty 20 over a 60-second window on a single miner node.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{@{}cc@{}}
+\toprule
+Threads & Blocks Mined \\
+\midrule
+1 & 16 \\
+2 & 34 \\
+4 & 39 \\
+8 & 35 \\
+\bottomrule
+\end{tabular}
+\caption{Parallel Mining Performance (Difficulty 20, 60 seconds)}
+\label{tab:parallel_results}
+\end{table}
+
+The results show that parallel mining provides significant speedup. Using 2 threads yields $2.1\times$ improvement over single-threaded mining, and 4 threads yields $2.4\times$ improvement. However, 8 threads shows diminishing returns (slightly worse than 4 threads), likely due to context switching overhead and the pod's CPU limit of 4 cores. The optimal thread count should match the available CPU cores.
 
 \section{Proposal: Known Limitations and Future Work}
 

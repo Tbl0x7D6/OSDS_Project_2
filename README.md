@@ -1,244 +1,291 @@
-# Bitcoin-like Blockchain Implementation (Nakamoto Protocol)
+**The report is in docs/.**
 
-A Go implementation of a Bitcoin-like blockchain system featuring Proof of Work consensus, peer-to-peer networking, and transaction handling.
+# Build and Run Instructions
 
-## Features
+This document provides instructions for building and deploying the Bitcoin-like blockchain implementation.
 
-### Core Components
+## Prerequisites
 
-1. **Block Structure**
-   - Index, Timestamp, Transactions list
-   - Previous block hash (hash pointer)
-   - Current block hash
-   - Nonce for PoW
-   - Difficulty level
-   - Miner ID
-
-2. **Blockchain & UTXO**
-   - Genesis block creation
-   - UTXO set management
-   - Transaction validation (Satoshi units, multiple inputs/outputs)
-   - Chain validation
-   - Longest chain rule for fork resolution
-   - Block verification (hash, PoW, transactions)
-
-3. **Proof of Work (PoW)**
-   - Adjustable difficulty (number of leading zeros)
-   - Single-threaded and parallel mining
-   - Mining cancellation support
-
-4. **Network Layer**
-   - RPC-based communication
-   - Transaction broadcasting
-   - Block broadcasting
-   - Chain synchronization
-
-5. **Client/Wallet** (JSON CLI Tool)
-   - Wallet generation (ECDSA keypair)
-   - Blockchain status querying
-   - Balance and UTXO querying
-   - JSON output for frontend integration
-   - Full TypeScript type definitions
+- Go 1.21 or later
+- Python 3.x (for evaluation scripts)
+- SSH access to miner nodes (for distributed deployment)
+- Make (build tool)
 
 ## Project Structure
 
 ```
-blockchain/
+.
 ├── cmd/
 │   ├── client/         # Client CLI application
 │   ├── miner/          # Miner node application
 │   └── fakeminer/      # Malicious miner for testing
 ├── pkg/
 │   ├── block/          # Block data structure
-│   ├── blockchain/     # Blockchain implementation
+│   ├── blockchain/     # Blockchain implementation with UTXO
+│   ├── config/         # Global configuration (Merkle tree flag)
+│   ├── merkle/         # Merkle tree implementation
 │   ├── network/        # P2P networking and RPC
 │   ├── pow/            # Proof of Work algorithm
-│   └── transaction/    # Transaction handling
+│   └── transaction/    # UTXO-based transaction handling
 ├── test/               # Integration tests
-├── demo.sh             # Demo script
-├── go.mod
-└── README.md
+├── eval/               # Performance evaluation scripts
+├── WebUI/              # React-based visualization frontend
+├── minerip.txt         # Static list of miner IP addresses
+└── Makefile            # Build and deployment automation
 ```
 
 ## Building
 
+### Compile All Binaries
+
 ```bash
-go build ./...
+make compile
 ```
 
-Build individual binaries:
+This builds three binaries in the `bin/` directory:
+- `bin/miner` - The miner node
+- `bin/client` - The client CLI tool
+- `bin/fakeminer` - A malicious miner for testing
+
+### Build Individual Components
+
 ```bash
+# Build miner only
 go build -o bin/miner ./cmd/miner
+
+# Build client only
 go build -o bin/client ./cmd/client
+
+# Build fakeminer only
 go build -o bin/fakeminer ./cmd/fakeminer
 ```
 
-## Running
+## Network Configuration
 
-### Start Miners
+### Static Miner Network
 
-Start multiple miners (recommended 5 for demo):
+**Important**: This project assumes a **static network**. The miner IP addresses are **manually pre-configured** in `minerip.txt`. The network does not support dynamic miner joining or leaving.
 
-```bash
-# Miner 1
-./bin/miner -id miner1 -address localhost:8001 -difficulty 4 \
-    -peers localhost:8002,localhost:8003,localhost:8004,localhost:8005
-
-# Miner 2
-./bin/miner -id miner2 -address localhost:8002 -difficulty 4 \
-    -peers localhost:8001,localhost:8003,localhost:8004,localhost:8005
-
-# ... repeat for miners 3-5
+The `minerip.txt` file contains one IP address per line:
+```
+10.233.120.4
+10.233.93.201
+10.233.102.215
+10.233.93.195
+10.233.120.8
+...
 ```
 
-### Use the Client
+The Makefile reads this file and uses the first `COUNT` IPs for deployment. Each miner is configured with all other miners as peers (full mesh topology).
 
-The new client tool provides JSON output for easy frontend integration.
+## Deployment
 
-#### Generate a wallet
+### Deploy Miners to Remote Nodes
+
+The main deployment target is `make deploy_miner`. This command:
+
+1. Stops any existing miners on the target nodes
+2. Compiles the miner binary
+3. Generates a wallet for each miner
+4. Copies the binary to each remote node via SCP
+5. Starts the miner process with the correct peer list
+
+```bash
+# Deploy 5 miners with difficulty 23
+make deploy_miner COUNT=5 DIFFICULTY=23
+
+# Deploy 3 miners with difficulty 18
+make deploy_miner COUNT=3 DIFFICULTY=18
+```
+
+**Parameters:**
+- `COUNT` - Number of miners to deploy (uses first N IPs from minerip.txt)
+- `DIFFICULTY` - Mining difficulty (number of leading zero bits required)
+
+**What happens during deployment:**
+
+1. The Makefile reads `minerip.txt` and selects the first `COUNT` IPs
+2. For each selected IP:
+   - A wallet is generated using `./bin/client wallet`
+   - The wallet is saved to `logs/wallets/wallet_<IP>.json`
+   - The peer list is constructed (all other selected IPs with port 8001)
+   - The miner binary is copied to `/osds_project2/miner` on the remote node
+   - The miner is started with:
+     ```bash
+     nohup /osds_project2/miner -id <wallet_address> -address 0.0.0.0:8001 \
+         -peers '<peer1>:8001,<peer2>:8001,...' -difficulty <DIFFICULTY> \
+         > /osds_project2/miner.log 2>&1 &
+     ```
+
+### Stop All Miners
+
+```bash
+make stop_miner
+```
+
+### Download Miner Logs
+
+```bash
+make download_log COUNT=5
+```
+
+Logs are saved to `logs/download/miner_<IP>.log`.
+
+## Running Locally
+
+Use `-help` for detailed information.
+
+### Start a Local Miner
+
+```bash
+./bin/miner -id miner1 -address localhost:8001 -difficulty 4 \
+    -peers localhost:8002,localhost:8003
+```
+
+**Miner Flags:**
+- `-id` - Miner ID (typically the wallet address)
+- `-address` - Address to listen on (e.g., `localhost:8001`)
+- `-difficulty` - PoW difficulty (number of leading zero bits)
+- `-peers` - Comma-separated list of peer addresses
+- `-merkle` - Use Merkle Tree for block hash (default: true)
+- `-dynamic-difficulty` - Enable dynamic difficulty adjustment (default: false)
+- `-threads` - Number of parallel mining threads (default: 1)
+
+### Using the Client
+
+#### Generate a New Wallet
 ```bash
 ./bin/client wallet
 ```
 
-Output:
-```json
-{
-  "address": "04a1b2c3...",
-  "private_key": "d4e5f6...",
-  "created_at": "2026-01-07T10:30:00Z"
-}
+#### Check Blockchain Status
+```bash
+./bin/client blockchain -miner <ip>:8001
+./bin/client blockchain -miner <ip>:8001 -detail  # Include block details
 ```
 
-#### Get blockchain status
+#### Check Balance
 ```bash
-./bin/client blockchain
-# Or with detailed block information
-./bin/client blockchain -detail
+./bin/client balance -address <wallet_address> -miner <ip>:8001
 ```
 
-#### Check wallet balance
+#### Query UTXOs
 ```bash
-./bin/client balance -address <wallet-address>
+./bin/client utxo -address <wallet_address> -miner <ip>:8001
 ```
 
-For detailed client documentation, see:
-- [Client Usage Guide](CLIENT_README.md)
-- [Integration Guide](INTEGRATION_GUIDE.md)
-- [TypeScript Types](client-types.ts)
-- [Examples](examples/README.md)
+## Performance Evaluation
 
-### Run the Demo
+The `eval/perf.py` script automates performance benchmarking:
 
 ```bash
-chmod +x demo.sh
+cd eval
+python3 perf.py --counts 1,3,5 --difficulties 15,18,20 --duration 120
+```
+
+This will:
+1. Deploy miners with various configurations
+2. Measure blocks mined over a fixed time window
+3. Save results to `logs/perf/<timestamp>/`
+4. Generate performance charts
+
+## Test Scripts
+
+### demo.sh
+
+A demonstration script that shows basic blockchain operations:
+
+```bash
 ./demo.sh
 ```
 
-## Testing
+### test_merkle_performance.sh
 
-Run all tests:
+Compares block generation rate with and without Merkle tree:
+
 ```bash
-go test ./... -v
+./test_merkle_performance.sh
 ```
 
-Run specific test suites:
+This script deploys miners in both modes and measures the number of blocks mined in a fixed time window.
+
+### test_parallel_mining.sh
+
+Tests parallel mining performance with different thread counts:
+
 ```bash
-# Transaction tests
-go test ./pkg/transaction/... -v
-
-# Block tests
-go test ./pkg/block/... -v
-
-# Blockchain tests
-go test ./pkg/blockchain/... -v
-
-# PoW tests
-go test ./pkg/pow/... -v
-
-# Network tests
-go test ./pkg/network/... -v
-
-# Integration tests
-go test ./test/... -v
+./test_parallel_mining.sh
 ```
 
-## Demo Requirements Checklist
+This script deploys single-miner instances with 1, 2, 4, and 8 threads, measuring blocks mined in a fixed duration.
 
-### 1. Run 5+ miners and generate 100+ blocks ✓
-- Multiple miners can be started with different addresses
-- Each miner broadcasts blocks to peers
-- Integration test `TestFiveMinersGenerateBlocks` demonstrates this
+## WebUI
 
-### 2. Difficulty adjustment affects mining speed ✓
-- `-difficulty` flag controls the number of leading zeros required
-- Higher difficulty = exponentially more hash attempts needed
-- Test `TestDifficultyAffectsMiningSpeed` demonstrates this
+A React-based visualization interface is available in the `WebUI/` directory.
 
-### 3. Corrupted blocks are rejected ✓
-- `HasValidHash()` checks block hash integrity
-- `HasValidPoW()` verifies PoW requirement
-- `ValidateTransactions()` validates all transactions
-- Test `TestIntegration_CorruptedBlockRejection` demonstrates this
+### Setup WebUI
 
-### 4. Lying miners (invalid PoW) are rejected ✓
-- Blocks without valid PoW are rejected
-- `Validate()` function checks both hash and PoW
-- Test `TestIntegration_LyingMinerRejection` demonstrates this
-- `fakeminer` tool can simulate malicious behavior
-
-### 5. Longest chain rule for forks ✓
-- `ReplaceChain()` implements longest chain selection
-- Shorter chains are rejected
-- Tests `TestLongestChainRule` and `TestIntegration_ForkResolutionLongestChain` demonstrate this
-
-## Performance Metrics
-
-| Metric | Description | How to Measure |
-|--------|-------------|----------------|
-| Block time | Average time between blocks | Observe mining logs |
-| Transactions per block | Number of TXs included | Check block data |
-| Network latency | Time for block propagation | Observe sync logs |
-| Hash rate | Hashes per second | PoW benchmark tests |
-
-Run benchmarks:
 ```bash
-go test ./pkg/pow/... -bench=. -benchtime=10s
-go test ./test/... -bench=. -benchtime=10s
+# Install Node.js environment
+make environment
+
+# Or manually:
+cd WebUI
+pnpm install
+pnpm dev
 ```
 
-## Architecture
+### Running WebUI
 
-### Consensus
-- Proof of Work (PoW) with adjustable difficulty
-- Longest chain wins in case of forks
-- All blocks are validated before acceptance
+Then, change the directory to `WebUI`. Execute
+```bash
+node api-server.mjs
+```
+and
+```bash
+pnpm dev
+```
+separately. You may see an application running on some port (the port number is shown along with the `pnpm` command), that is the frontend.
 
-### Networking
-- TCP-based RPC communication
-- Gossip protocol for transaction dissemination
-- Pull-based chain synchronization
+![](.\pics\miner_addr.png)
 
-### Transaction Model
-- Simple transfer model (from, to, amount)
-- Coinbase transactions for mining rewards
-- Basic signature verification
+At the very begining, you should set the miner address manually.
 
-## Security Features
+The WebUI provides:
 
-1. **Hash Integrity**: Each block contains the hash of the previous block
-2. **PoW Verification**: All blocks must meet difficulty requirement
-3. **Transaction Validation**: Invalid transactions are rejected
-4. **Chain Validation**: Full chain validation on sync
+- Blockchain status dashboard
 
-## Limitations & Future Improvements
+  ![](.\pics\info.png)
 
-Current limitations (can be addressed in Part II):
-- No persistent storage (in-memory only)
-- Simplified transaction/signature model
-- No Merkle tree for transactions
-- Static peer list
-- No dynamic difficulty adjustment
+- Wallet management
 
-## License
+  ![](.\pics\wallet.png)
 
-This project is for educational purposes as part of a distributed systems course.
+- Block explorer
+
+  ![](.\pics\chain.png)
+
+- Transaction transfer interface
+
+  ![](.\pics\tx.png)
+
+## Troubleshooting
+
+### SSH Connection Issues
+Ensure SSH keys are set up for passwordless access to miner nodes:
+```bash
+ssh-copy-id root@<miner-ip>
+```
+
+### Miner Not Starting
+Check the remote log:
+```bash
+make download_log
+```
+or
+```bash
+ssh root@<miner-ip> "cat /osds_project2/miner.log"
+```
+
+### Missing minerip.txt
+Create the file with one IP address per line. Ensure these nodes are accessible via SSH.

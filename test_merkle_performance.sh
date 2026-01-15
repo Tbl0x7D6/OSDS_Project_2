@@ -7,28 +7,35 @@ BIN_MINER="$ROOT_DIR/bin/miner"
 BIN_CLIENT="$ROOT_DIR/bin/client"
 LOG_DIR="$ROOT_DIR/logs/test_merkle_performance"
 MINER_IP_FILE="$ROOT_DIR/minerip.txt"
+REMOTE_DIR="/osds_project2"
+
+SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o ConnectTimeout=5"
+SCP_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o ConnectTimeout=5"
 
 mkdir -p "$LOG_DIR"
 
-NUM_CLIENTS=10
-NUM_MINERS=5
+NUM_CLIENTS=5
+NUM_MINERS=3
 DIFFICULTY=18
 TEST_DURATION=60
-TX_RATE=100
-MIN_CHAIN_LENGTH=5
+TX_RATE=10
+MIN_CHAIN_LENGTH=10
 
-PIDS=()
 declare -a CLIENT_ADDRESSES
 declare -a CLIENT_PRIVKEYS
 declare -a MINER_PUBKEYS
 declare -a MINER_PRIVKEYS
 declare -a MINER_ADDRESSES
+declare -a MINER_IPS
 
 cleanup() {
     echo "Cleaning up..."
-    [ ${#PIDS[@]} -gt 0 ] && kill "${PIDS[@]}" 2>/dev/null || true
-    pkill -f "$BIN_MINER" 2>/dev/null || true
-    jobs -p | xargs -r kill 2>/dev/null || true
+    # Stop remote miners
+    if [ ${#MINER_IPS[@]} -gt 0 ]; then
+        for ip in "${MINER_IPS[@]}"; do
+            ssh -n $SSH_OPTS root@"$ip" "pkill -f ${REMOTE_DIR}/miner || pkill -f miner || true" >/dev/null 2>&1 || true
+        done
+    fi
     sleep 2
 }
 trap cleanup EXIT
@@ -146,18 +153,21 @@ generate_miner_keys() {
 start_miners() {
     local merkle_flag=$1 base_port=$2 prefix=$3
     MINER_ADDRESSES=()
+    MINER_IPS=()
     
-    # Build miner addresses using external IPs
+    # Build miner addresses and collect IPs
     for i in $(seq 1 $NUM_MINERS); do
         local miner_ip=$(get_miner_ip $((i - 1)))
         local port=$((base_port + i - 1))
         MINER_ADDRESSES+=("${miner_ip}:${port}")
+        MINER_IPS+=("${miner_ip}")
     done
     
+    echo "  Deploying miners to remote pods..."
     for i in $(seq 1 $NUM_MINERS); do
-        local miner_ip=$(get_miner_ip $((i - 1)))
+        local miner_ip="${MINER_IPS[$((i-1))]}"
         local port=$((base_port + i - 1))
-        local addr="${miner_ip}:${port}"
+        local addr="0.0.0.0:${port}"
         local id="${MINER_PUBKEYS[$((i-1))]}"
         local peers=""
         
@@ -171,11 +181,41 @@ start_miners() {
             fi
         done
         
-        echo "  Starting ${prefix}miner$i at $addr (merkle=$merkle_flag)"
-        "$BIN_MINER" -id "$id" -address "$addr" -difficulty $DIFFICULTY -mine=true -merkle=$merkle_flag -peers "$peers" > "$LOG_DIR/${prefix}miner$i.log" 2>&1 &
-        PIDS+=($!)
-        sleep 0.3
+        echo "    Deploying ${prefix}miner$i to $miner_ip:$port (merkle=$merkle_flag)"
+        
+        # Create remote directory
+        ssh -n $SSH_OPTS root@"$miner_ip" "mkdir -p $REMOTE_DIR" >/dev/null 2>&1 || {
+            echo "      Failed to create remote directory on $miner_ip"
+            continue
+        }
+        
+        # Stop any existing miner
+        ssh -n $SSH_OPTS root@"$miner_ip" "pkill -f ${REMOTE_DIR}/miner || pkill -f miner || true; rm -f ${REMOTE_DIR}/miner_test" >/dev/null 2>&1 || true
+        
+        # Copy miner binary
+        scp $SCP_OPTS "$BIN_MINER" root@"$miner_ip":"${REMOTE_DIR}/miner_test.new" >/dev/null 2>&1 < /dev/null || {
+            echo "      Failed to copy binary to $miner_ip"
+            continue
+        }
+        
+        # Install binary
+        ssh -n $SSH_OPTS root@"$miner_ip" "mv -f ${REMOTE_DIR}/miner_test.new ${REMOTE_DIR}/miner_test && chmod +x ${REMOTE_DIR}/miner_test" >/dev/null 2>&1 || {
+            echo "      Failed to install binary on $miner_ip"
+            continue
+        }
+        
+        # Start miner remotely
+        ssh -n $SSH_OPTS root@"$miner_ip" "nohup ${REMOTE_DIR}/miner_test -id '$id' -address '$addr' -difficulty $DIFFICULTY -mine=true -merkle=$merkle_flag -peers '$peers' > ${REMOTE_DIR}/${prefix}miner${i}.log 2>&1 &" >/dev/null 2>&1 && {
+            echo "      Started successfully"
+        } || {
+            echo "      Failed to start miner on $miner_ip"
+        }
+        
+        sleep 0.5
     done
+    
+    echo "  Waiting for miners to initialize..."
+    sleep 3
 }
 
 fund_client() {
@@ -248,11 +288,9 @@ run_test() {
     local merkle_flag=$1 test_name=$2 base_port=$3
     
     log_section "Running test: $test_name (merkle=$merkle_flag)"
-    PIDS=()
     
     start_miners "$merkle_flag" $base_port "$test_name"
     local primary_miner="${MINER_ADDRESSES[0]}"
-    sleep 3
     
     echo "  Waiting for initial chain to build..."
     wait_for_chain_length "$primary_miner" $MIN_CHAIN_LENGTH 120 || { echo "  Failed"; return 1; }
@@ -277,9 +315,20 @@ run_test() {
     local blocks_per_second=$(echo "scale=4; $blocks_mined / $elapsed" | bc)
     local avg_block_time=$(echo "scale=4; $elapsed / $blocks_mined" | bc 2>/dev/null || echo "N/A")
     
+    # Download logs from remote miners to count multi-tx blocks
+    echo "  Downloading miner logs..."
     local multi_tx_blocks=0
     for i in $(seq 1 $NUM_MINERS); do
-        local count=$(grep -E -c "with [2-9] transactions|with [1-9][0-9] transactions" "$LOG_DIR/${test_name}miner${i}.log" 2>/dev/null | tr -d "\n" || echo "0")
+        local miner_ip="${MINER_IPS[$((i-1))]}"
+        local remote_log="${REMOTE_DIR}/${test_name}miner${i}.log"
+        local local_log="$LOG_DIR/${test_name}miner${i}.log"
+        
+        scp $SCP_OPTS root@"$miner_ip":"$remote_log" "$local_log" >/dev/null 2>&1 || {
+            echo "    Warning: Could not download log from $miner_ip"
+            continue
+        }
+        
+        local count=$(grep -E -c "with [2-9] transactions|with [1-9][0-9] transactions" "$local_log" 2>/dev/null | tr -d "\n" || echo "0")
         multi_tx_blocks=$((multi_tx_blocks + count))
     done
     
@@ -292,10 +341,10 @@ run_test() {
     echo "    Average block time: ${avg_block_time}s"
     
     echo "  Stopping miners..."
-    [ ${#PIDS[@]} -gt 0 ] && kill "${PIDS[@]}" 2>/dev/null || true
+    for ip in "${MINER_IPS[@]}"; do
+        ssh -n $SSH_OPTS root@"$ip" "pkill -f ${REMOTE_DIR}/miner_test || pkill -f miner || true" >/dev/null 2>&1 || true
+    done
     sleep 2
-    pkill -f "$BIN_MINER" 2>/dev/null || true
-    sleep 1
     
     echo "$blocks_mined" > "$LOG_DIR/${test_name}_blocks.txt"
     echo "$blocks_per_second" > "$LOG_DIR/${test_name}_rate.txt"
