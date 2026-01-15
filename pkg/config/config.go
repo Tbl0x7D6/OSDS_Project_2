@@ -12,6 +12,10 @@ var (
 	// Default is false (use static difficulty)
 	useDynamicDifficulty = false
 
+	// miningThreads controls the number of parallel threads for mining
+	// Default is 1 (sequential mining, no parallelism)
+	miningThreads = 1
+
 	mu sync.RWMutex
 )
 
@@ -41,4 +45,23 @@ func SetUseDynamicDifficulty(use bool) {
 	mu.Lock()
 	defer mu.Unlock()
 	useDynamicDifficulty = use
+}
+
+// MiningThreads returns the number of parallel threads for mining
+func MiningThreads() int {
+	mu.RLock()
+	defer mu.RUnlock()
+	return miningThreads
+}
+
+// SetMiningThreads sets the number of parallel threads for mining
+// If threads <= 0, it defaults to 1 (sequential mining)
+func SetMiningThreads(threads int) {
+	mu.Lock()
+	defer mu.Unlock()
+	if threads <= 0 {
+		miningThreads = 1
+	} else {
+		miningThreads = threads
+	}
 }

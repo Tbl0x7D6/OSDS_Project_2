@@ -2,6 +2,7 @@ package pow
 
 import (
 	"blockchain/pkg/block"
+	"fmt"
 	"blockchain/pkg/transaction"
 	"context"
 	"testing"
@@ -184,5 +185,73 @@ func BenchmarkMineParallel(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		pow, _ := setupTestPoW(2)
 		pow.MineParallel(context.Background(), 4)
+	}
+}
+
+
+// Test parallel mining with different worker counts
+func TestMineParallelWithDifferentWorkerCounts(t *testing.T) {
+	workerCounts := []int{1, 2, 4, 8}
+
+	for _, workers := range workerCounts {
+		t.Run(fmt.Sprintf("workers=%d", workers), func(t *testing.T) {
+			pow, _ := setupTestPoW(10)
+
+			result := pow.MineParallel(context.Background(), workers)
+
+			if !result.Success {
+				t.Errorf("Parallel mining with %d workers should succeed", workers)
+			}
+
+			leading, ok := leadingZeroBits(result.Block.Hash)
+			if !ok || leading < pow.Difficulty {
+				t.Errorf("Hash should have %d leading zero bits, got %d", pow.Difficulty, leading)
+			}
+
+			if !result.Block.HasValidPoW() {
+				t.Errorf("Block mined with %d workers should have valid PoW", workers)
+			}
+		})
+	}
+}
+
+// Test that parallel mining produces valid blocks consistently
+func TestMineParallelConsistency(t *testing.T) {
+	iterations := 5
+	workers := 4
+
+	for i := 0; i < iterations; i++ {
+		pow, _ := setupTestPoW(10)
+		result := pow.MineParallel(context.Background(), workers)
+
+		if !result.Success {
+			t.Errorf("Iteration %d: Parallel mining should succeed", i)
+			continue
+		}
+
+		// Verify the block is valid
+		if !result.Block.HasValidPoW() {
+			t.Errorf("Iteration %d: Block should have valid PoW", i)
+		}
+
+		// Verify hash meets difficulty
+		leading, ok := leadingZeroBits(result.Block.Hash)
+		if !ok || leading < pow.Difficulty {
+			t.Errorf("Iteration %d: Hash should meet difficulty requirement", i)
+		}
+	}
+}
+
+// Benchmark parallel mining with different worker counts
+func BenchmarkMineParallelWorkers(b *testing.B) {
+	workerCounts := []int{1, 2, 4, 8}
+
+	for _, workers := range workerCounts {
+		b.Run(fmt.Sprintf("workers=%d", workers), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				pow, _ := setupTestPoW(2)
+				pow.MineParallel(context.Background(), workers)
+			}
+		})
 	}
 }

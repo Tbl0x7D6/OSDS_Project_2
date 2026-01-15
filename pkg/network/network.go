@@ -4,6 +4,7 @@ package network
 import (
 	"blockchain/pkg/block"
 	"blockchain/pkg/blockchain"
+	"blockchain/pkg/config"
 	"blockchain/pkg/pow"
 	"blockchain/pkg/transaction"
 	"context"
@@ -593,14 +594,20 @@ func (m *Miner) mineBlock() {
 	var result *pow.MiningResult
 
 	go func() {
-		// Replace nil with context.TODO() to avoid passing a nil context
-		result = powInstance.Mine(context.TODO(), func(nonce int64) {
-			select {
-			case <-stopChan:
-				return
-			default:
-			}
-		})
+		// Use parallel mining if threads > 1, otherwise use sequential mining
+		threads := config.MiningThreads()
+		if threads > 1 {
+			result = powInstance.MineParallel(context.TODO(), threads)
+		} else {
+			// Replace nil with context.TODO() to avoid passing a nil context
+			result = powInstance.Mine(context.TODO(), func(nonce int64) {
+				select {
+				case <-stopChan:
+					return
+				default:
+				}
+			})
+		}
 		close(done)
 	}()
 

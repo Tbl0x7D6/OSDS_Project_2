@@ -31,11 +31,12 @@ func main() {
 	autoMine := flag.Bool("mine", true, "Start mining automatically")
 	useMerkle := flag.Bool("merkle", true, "Use Merkle Tree for block hash calculation (default: true)")
 	dynamicDiff := flag.Bool("dynamic-difficulty", false, "Enable dynamic difficulty adjustment (default: false)")
+	threads := flag.Int("threads", 1, "Number of parallel mining threads (default: 1, no parallelism)")
 
 	flag.Parse()
 
 	if *id == "" {
-		fmt.Println("Usage: miner -id <id> -address <address> [-peers <peers>] [-difficulty <n>] [-mine] [-merkle]")
+		fmt.Println("Usage: miner -id <id> -address <address> [-peers <peers>] [-difficulty <n>] [-mine] [-merkle] [-threads <n>]")
 		fmt.Println()
 		fmt.Println("Options:")
 		fmt.Println("  -id        Miner ID (required)")
@@ -45,6 +46,7 @@ func main() {
 		fmt.Println("  -mine      Start mining automatically (default: true)")
 		fmt.Println("  -merkle    Use Merkle Tree for block hash (default: true)")
 		fmt.Println("  -dynamic-difficulty  Enable dynamic difficulty adjustment (default: false)")
+		fmt.Println("  -threads   Number of parallel mining threads (default: 1)")
 		os.Exit(1)
 	}
 
@@ -62,6 +64,14 @@ func main() {
 		log.Printf("[%s] Dynamic difficulty adjustment enabled (target: 1 block per 10 seconds)", shortID(*id))
 	} else {
 		log.Printf("[%s] Static difficulty mode (difficulty: %d)", shortID(*id), *difficulty)
+	}
+
+	// Set parallel mining threads configuration
+	config.SetMiningThreads(*threads)
+	if *threads > 1 {
+		log.Printf("[%s] Parallel mining enabled with %d threads", shortID(*id), *threads)
+	} else {
+		log.Printf("[%s] Sequential mining (single thread)", shortID(*id))
 	}
 
 	// Parse peers
