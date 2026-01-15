@@ -18,7 +18,7 @@ The evaluator:
 From the repo root:
 
 ```bash
-python3 eval/perf.py --counts 1,3,5,7 --difficulties 10,14,17,19,22 --duration 60 --progress-interval 5 --stop-between
+python3 eval/perf.py --counts 1,3,5 --difficulties 15,18,20,21 --duration 60 --progress-interval 2 --stop-between
 ```
 
 Options:
